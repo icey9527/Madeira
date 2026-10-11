@@ -27,7 +27,7 @@ env:
   # Phase 4（原生栈降级）时把 APP_ONLY 改回 '0' 跑完整流水线，
   # 届时 nightly 预发布步骤会自动开始产出可安装的 IPA。
   APP_ONLY: '0'
-  IPHONEOS_DEPLOYMENT_TARGET: '15.6'
+  IPHONEOS_DEPLOYMENT_TARGET: '15.5'
 
 jobs:
   build:
@@ -67,8 +67,8 @@ jobs:
             app/Madeira/libavcodec.a
             app/Madeira/libswresample.a
             app/Madeira/libavutil.a
-          key: toolchains-macos26-ios15.6-v3-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh') }}
-          restore-keys: toolchains-macos26-ios15.6-v3-
+          key: toolchains-macos26-ios15.5-v3-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh') }}
+          restore-keys: toolchains-macos26-ios15.5-v3-
 
       - name: Cache ccache（FEX 编译缓存，key 稳定、靠 ccache 自身内容判断命中）
         if: env.APP_ONLY != '1'
@@ -97,8 +97,22 @@ jobs:
             .git/modules/FEX
           key: fex-submodule-${{ steps.fexsha.outputs.sha }}
 
+      - name: Restore downloaded llvm-mingw
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
+          key: llvm-mingw-20260421-${{ runner.arch }}
+
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
         run: tools/ci/build-all.sh deps
+
+      - name: Save downloaded llvm-mingw before native build
+        if: success() && env.APP_ONLY != '1'
+        uses: actions/cache/save@v4
+        with:
+          path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
+          key: llvm-mingw-20260421-${{ runner.arch }}
 
       - name: toolchains（GnuTLS / FFmpeg / freetype）
         run: tools/ci/build-all.sh toolchains
@@ -206,7 +220,7 @@ jobs:
 
             | 信息 / Info | 详情 / Details |
             |---|---|
-            | 🎯 目标系统 / Target | iPadOS 15.6+（移植版） |
+            | 🎯 目标系统 / Target | iPadOS 15.5+（移植版，尚待完整包真机验收） |
             | 🕐 构建时间 / Build time | ${{ github.event.head_commit.timestamp }} |
             | 📝 提交 / Commit | [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) |
 

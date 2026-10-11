@@ -443,7 +443,7 @@ stage_app() {
   fi
   local app_minos metalfx_load
   app_minos="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/Info.plist")"
-  [ "$app_minos" = 15.6 ] || die "主 App MinimumOSVersion 必须为 15.6，实际为 $app_minos"
+  [ "$app_minos" = "${IPHONEOS_DEPLOYMENT_TARGET:-15.5}" ] || die "主 App MinimumOSVersion 与构建目标不一致，实际为 $app_minos"
   metalfx_load="$(otool -l "$APP_BUILT/Madeira" | awk '/^[[:space:]]*cmd LC_/ { command = $2 } /name .*MetalFX.framework/ { print command }')"
   [ "$metalfx_load" = LC_LOAD_WEAK_DYLIB ] || die "MetalFX 必须弱链接，实际为 ${metalfx_load:-MISSING}"
   echo "  MetalFX: $metalfx_load"
@@ -485,6 +485,11 @@ cleanup() {
   if [ "$rc" -ne 0 ]; then
     sleep 1   # 给 tee 一点时间把尾部刷进日志文件
     summary_fail || true
+    while IFS= read -r diagnostic; do
+      local relative="${diagnostic#"$R"/}"
+      mkdir -p "$LOGDIR/native-diagnostics/$(dirname "$relative")"
+      cp "$diagnostic" "$LOGDIR/native-diagnostics/$relative" || true
+    done < <(find "$R/build" -type f \( -name '*.log' -o -name '*.err' -o -name 'err-*.txt' \) -newer "$LOGDIR/.stamp" 2>/dev/null)
   fi
   exit "$rc"
 }
