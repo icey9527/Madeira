@@ -132,6 +132,7 @@ jobs:
           name: Madeira JIT Probe（15.6 真机实验）
           body: |
             独立 JIT 诊断工具，不运行游戏，不是 Madeira 完整版。
+            Build 3：移除 iOS 15 A12+ 禁止的 dynamic-codesigning 权限，修正前两版启动失败的配置问题。
             用 TrollStore 安装 Madeira-JIT-Probe.ipa，打开后点击运行测试。
             预期两次返回值分别为 42、43。点击“分享日志”导出 jit-probe.log。
             若测试时退出，重新打开后先分享日志；也可从“文件”App 中导出。

@@ -12,8 +12,12 @@ rewriting the same code through the RW alias. Share `jit-probe.log` with the sha
 button. If execution terminates the App, reopen it and share the persisted log
 before trying again. File Sharing also exposes the log through the Files App.
 
-The probe is ad-hoc signed with `dynamic-codesigning` and `get-task-allow`.
-The main App does not yet have an equivalent tested entitlement configuration.
+The probe is ad-hoc signed with `get-task-allow`.
+Builds 1 and 2 mistakenly included `dynamic-codesigning`, which TrollStore's
+[official documentation](https://github.com/opa334/TrollStore#banned-entitlements)
+lists as banned on iOS 15 A12+ devices: apps carrying it crash on launch.
+Build 3 removes it and checks the signed binary for all three documented banned
+entitlements. Installation alone does not prove debugger-free JIT is available.
 The probe records code-signing status and device OS, bypasses the existing
 `CS_DEBUGGED` readiness gate, and calls no debugger preparation protocol.
 It deliberately leaves an execution fault to the OS rather than catching it and
@@ -22,6 +26,7 @@ Build 2 disables production-only address-space reservation and Metal validation
 constructors in the probe. The main App keeps both constructors. A POSIX log
 marker is flushed on entry to `main`, before UIKit initializes. CI retains dSYM
 symbols for interpreting device crash reports.
+Build 3 retains the UI object file as well so its dSYM includes UI symbols.
 
 PASS proves this allocator can execute and rewrite a small anonymous code region
 under this installation's permissions. It does not prove production pool sizing,
