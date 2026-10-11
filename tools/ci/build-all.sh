@@ -484,18 +484,10 @@ stage_app() {
   if [ -f "$APP_BUILT/PlugIns/MadeiraJITHelper.appex/Info.plist" ]; then
     echo "  JITHelper MinimumOSVersion = $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/PlugIns/MadeiraJITHelper.appex/Info.plist")"
   fi
-  local app_minos metalfx_load
+  local app_minos
   app_minos="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/Info.plist")"
   [ "$app_minos" = "${IPHONEOS_DEPLOYMENT_TARGET:-15.6}" ] || die "主 App MinimumOSVersion 与构建目标不一致，实际为 $app_minos"
-  metalfx_load="$(otool -l "$APP_BUILT/Madeira" | awk '/^[[:space:]]*cmd LC_/ { command = $2 } /name .*MetalFX.framework/ { print command }')"
-  [ "$metalfx_load" = LC_LOAD_WEAK_DYLIB ] || die "MetalFX 必须弱链接，实际为 ${metalfx_load:-MISSING}"
-  echo "  MetalFX: $metalfx_load"
-  otool -L "$APP_BUILT/Madeira" > "$LOGDIR/startup-dependencies.txt"
-  otool -l "$APP_BUILT/Madeira" > "$LOGDIR/startup-load-commands.txt"
-  nm -m -u "$APP_BUILT/Madeira" > "$LOGDIR/startup-imports.txt"
-  if grep -q libmetalirconverter "$LOGDIR/startup-dependencies.txt"; then
-    die "Metal Shader Converter 只能按需 dlopen，不能作为 15.6 主程序的启动依赖"
-  fi
+  bash tools/ci/verify-startup.sh "$APP_BUILT" "$LOGDIR"
 }
 
 # ---------- main ----------

@@ -101,12 +101,18 @@ jobs:
           path: app/Madeira/x86_64-vcruntime
           key: vcruntime-x64-v1
 
+      - name: Record restored compilation cache contents
+        id: ccache-before
+        if: env.APP_ONLY != '1'
+        run: echo "fingerprint=$(python3 tools/ci/cache-fingerprint.py ccache .ccache)" >> "$GITHUB_OUTPUT"
+
       - name: Resolve FEX 子模块 SHA
         id: fexsha
         run: echo "sha=$(git ls-tree HEAD FEX | awk '{print $3}')" >> "$GITHUB_OUTPUT"
 
       - name: Cache FEX 子模块（工作树 + .git/modules 元数据，key=gitlink SHA）
-        uses: actions/cache@v4
+        id: fex-source-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             FEX
@@ -114,6 +120,7 @@ jobs:
           key: ${{ runner.arch == 'X64' && format('fex-submodule-{0}', steps.fexsha.outputs.sha) || format('fex-submodule-ARM64-{0}', steps.fexsha.outputs.sha) }}
 
       - name: Restore downloaded llvm-mingw
+        id: mingw-cache
         if: env.APP_ONLY != '1'
         uses: actions/cache/restore@v4
         with:
@@ -132,19 +139,29 @@ jobs:
           key: brew-downloads-macos26-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: brew-downloads-macos26-${{ runner.arch }}-
 
+      - name: Record restored Homebrew downloads
+        id: brew-before
+        if: env.APP_ONLY != '1'
+        run: echo "fingerprint=$(python3 tools/ci/cache-fingerprint.py downloads ~/Library/Caches/Homebrew/downloads)" >> "$GITHUB_OUTPUT"
+
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
         id: deps
         run: tools/ci/build-all.sh deps
 
-      - name: Save Homebrew downloads before native build
+      - name: Check Homebrew download changes
+        id: brew-after
         if: success() && env.APP_ONLY != '1'
+        run: echo "fingerprint=$(python3 tools/ci/cache-fingerprint.py downloads ~/Library/Caches/Homebrew/downloads)" >> "$GITHUB_OUTPUT"
+
+      - name: Save Homebrew downloads before native build
+        if: success() && env.APP_ONLY != '1' && steps.brew-before.outputs.fingerprint != steps.brew-after.outputs.fingerprint
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Caches/Homebrew/downloads
           key: ${{ steps.brew-cache.outputs.cache-primary-key }}
 
       - name: Save downloaded llvm-mingw before native build
-        if: success() && env.APP_ONLY != '1'
+        if: success() && env.APP_ONLY != '1' && steps.mingw-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
@@ -167,6 +184,9 @@ jobs:
             app/Madeira/libavutil.a
           key: ${{ steps.toolchains-cache.outputs.cache-primary-key }}
 
+      - name: Initialize FEX checkout before restoring build outputs
+        run: git submodule update --init --depth 1 -- FEX
+
       - name: Restore FEX incremental build
         id: fex-build-cache
         if: env.APP_ONLY != '1'
@@ -179,6 +199,15 @@ jobs:
         id: native
         run: tools/ci/build-all.sh native
 
+      - name: Save FEX checkout before later stages
+        if: success() && steps.fex-source-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            FEX
+            .git/modules/FEX
+          key: ${{ steps.fex-source-cache.outputs.cache-primary-key }}
+
       - name: Save completed FEX build before Wine
         if: success() && env.APP_ONLY != '1' && steps.fex-build-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -186,12 +215,22 @@ jobs:
           path: FEX/build-ios
           key: ${{ steps.fex-build-cache.outputs.cache-primary-key }}
 
-      - name: Save FEX compilation cache before Wine
+      - name: Check compilation cache changes
+        id: ccache-after
         if: success() && env.APP_ONLY != '1'
+        run: echo "fingerprint=$(python3 tools/ci/cache-fingerprint.py ccache .ccache)" >> "$GITHUB_OUTPUT"
+
+      - name: Save FEX compilation cache before Wine
+        if: success() && env.APP_ONLY != '1' && steps.ccache-before.outputs.fingerprint != steps.ccache-after.outputs.fingerprint
         uses: actions/cache/save@v4
         with:
           path: .ccache
           key: ${{ steps.ccache.outputs.cache-primary-key }}
+
+      - name: Resolve Wine build inputs
+        id: wine-inputs
+        if: env.APP_ONLY != '1'
+        run: echo "key=$(python3 tools/ci/wine-cache-key.py)" >> "$GITHUB_OUTPUT"
 
       - name: Restore completed Wine native libraries and generated headers
         id: wine-cache
@@ -204,7 +243,7 @@ jobs:
             app/Madeira/libntdll_unix.a
             app/Madeira/libwineserver.a
             app/Madeira/libwin32u_unix.a
-          key: wine-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ hashFiles('build/ntdll-unix/**', 'build/wineserver/**', 'build/win32u-unix/**', 'build/madsync/**', 'build/hidpad/**', 'tools/ci/build-all.sh') }}
+          key: wine-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ steps.wine-inputs.outputs.key }}
 
       - name: wine（configure + unix 侧静态库）
         id: wine
