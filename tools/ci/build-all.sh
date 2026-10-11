@@ -51,8 +51,12 @@ stage_deps() {
     curl -fL --retry 3 -o /tmp/VC_redist.x64.exe "https://aka.ms/vs/17/release/vc_redist.x64.exe"
     rm -rf /tmp/vcredist && mkdir -p /tmp/vcredist
     7zz x /tmp/VC_redist.x64.exe -o/tmp/vcredist >/dev/null
-    cab="$(find /tmp/vcredist -path '*.rsrc/1033/CABINET/*.cab' | head -1)"
-    [ -n "$cab" ] || die "VC_redist.x64.exe 里没找到 CAB（微软安装器布局可能变了）"
+    cab="$(find /tmp/vcredist -name '*.cab' | head -1)"
+    if [ -z "$cab" ]; then
+      echo "[deps] /tmp/vcredist 内容如下（供诊断）:"
+      find /tmp/vcredist -maxdepth 5 | head -60
+      die "VC_redist.x64.exe 里没找到 CAB（微软安装器布局可能变了）"
+    fi
     mkdir -p app/Madeira/x86_64-vcruntime
     (cd app/Madeira/x86_64-vcruntime && 7zz x "$cab" >/dev/null)
     # 只保留 VC 运行时需要的 12 个 DLL（见 tools/fetch-vcruntime.md）
@@ -184,11 +188,39 @@ stage_app() {
   echo "======== APP BUILD OK ========"
 }
 
+# run_stage — 执行阶段并把失败证据写进 $GITHUB_STEP_SUMMARY（运行页可直接
+# 渲染，无需登录），同时 tee 全量日志到 ci-logs/<stage>.log 供 artifact 上传。
+run_stage() {
+  local s="$1"
+  local log="$LOGDIR/$s.log"
+  touch "$LOGDIR/.stamp"
+  step "stage: $s"
+  if ! "stage_$s" 2>&1 | tee "$log"; then
+    {
+      echo "## ❌ port-ci — stage \`$s\` FAILED"
+      echo
+      echo '```text'
+      tail -n 120 "$log"
+      echo '```'
+      local f
+      find "$R/build" -name '*.log' -newer "$LOGDIR/.stamp" 2>/dev/null | head -20 | while read -r f; do
+        echo
+        echo "#### ${f#"$R"/}（末 40 行）"
+        echo '```text'
+        tail -n 40 "$f"
+        echo '```'
+      done
+    } >> "${GITHUB_STEP_SUMMARY:-$LOGDIR/summary-fallback.md}"
+    tail -n 120 "$log"
+    exit 1
+  fi
+}
+
 case "${1:-}" in
-  deps)       stage_deps ;;
-  toolchains) stage_toolchains ;;
-  native)     stage_native ;;
-  wine)       stage_wine ;;
-  app)        stage_app ;;
+  deps)       run_stage deps ;;
+  toolchains) run_stage toolchains ;;
+  native)     run_stage native ;;
+  wine)       run_stage wine ;;
+  app)        run_stage app ;;
   *) die "用法: tools/ci/build-all.sh <deps|toolchains|native|wine|app>" ;;
 esac
