@@ -10,7 +10,9 @@
 import Foundation
 
 /// Manages the authenticated Steam session: login, heartbeat, reconnection, message routing.
-@Observable
+/// Phase 2 (iOS 15.6): was @Observable — nothing observes this object
+/// (views observe SteamOwnedLibrary; SwiftSteam talks over the
+/// SteamCMSession protocol), so a plain class is equivalent here.
 @MainActor
 class SteamSession {
     // MARK: - Published State

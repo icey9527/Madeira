@@ -552,7 +552,7 @@ struct SteamGamesSection: View {
             model.refresh()
             if libraryEnabled { steam.start(); steam.reconcileSession() }
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             if phase == .active { model.refresh(); if libraryEnabled { steam.reconcileSession() } }
         }
         .sheet(item: $selected) { selection in
@@ -909,7 +909,7 @@ struct SteamGameSheet: View {
                         }
                     }
                 } else {
-                    ContentUnavailableView("Game unavailable", systemImage: "questionmark.square.dashed",
+                    EmptyStateView("Game unavailable", systemImage: "questionmark.square.dashed",
                                            description: Text("Refresh your Steam library and try again."))
                 }
             }

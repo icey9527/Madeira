@@ -1049,7 +1049,7 @@ struct JoystickKeyView: View {
                             hosted = true
                         }
                     }
-                    .onChange(of: geo.frame(in: .global)) { _, f in
+                    .onChange(of: geo.frame(in: .global)) { f in
                         center = CGPoint(x: f.midX, y: f.midY)
                         JoystickPadState.shared.center = center
                     }
@@ -1352,7 +1352,7 @@ struct ContentView: View {
             // A Home Screen shortcut (madeira://play?exe=...) starts its library entry,
             // now or, from a cold start, once the library is up.
             .onReceive(ShortcutRouter.shared.$pendingExe) { _ in launchPendingShortcut() }
-            .onChange(of: library.enabled) { _, _ in launchPendingShortcut() }
+            .onChange(of: library.enabled) { _ in launchPendingShortcut() }
         }
     }
 
@@ -1383,7 +1383,7 @@ struct ContentView: View {
             .statusBarHidden(landscape)
             .persistentSystemOverlays(landscape ? .hidden : .automatic)
             // The landscape controls window re-frames to the rotated scene.
-            .onChange(of: landscape) { _, _ in TouchControlsHost.attach() }
+            .onChange(of: landscape) { _ in TouchControlsHost.attach() }
         }
         .ignoresSafeArea(UIDevice.current.userInterfaceIdiom == .pad ? .keyboard : [])
     }
@@ -3968,11 +3968,11 @@ struct TouchControlsOverlay: View {
             .contentShape(Rectangle())
             .gesture(scalePinch, including: m.editing ? .all : .subviews)
             .onAppear { applyDefaultLayout(geo); configureGamepad(landscape: landscape) }
-            .onChange(of: geo.size) { _, _ in applyDefaultLayout(geo); configureGamepad(landscape: landscape) }
-            .onChange(of: m.controls) { _, _ in configureGamepad(landscape: landscape) }
-            .onChange(of: m.visible) { _, _ in configureGamepad(landscape: landscape) }
-            .onChange(of: m.editing) { _, _ in configureGamepad(landscape: landscape) }
-            .onChange(of: library.blocksGameplayTouch) { _, _ in configureGamepad(landscape: landscape) }
+            .onChange(of: geo.size) { _ in applyDefaultLayout(geo); configureGamepad(landscape: landscape) }
+            .onChange(of: m.controls) { _ in configureGamepad(landscape: landscape) }
+            .onChange(of: m.visible) { _ in configureGamepad(landscape: landscape) }
+            .onChange(of: m.editing) { _ in configureGamepad(landscape: landscape) }
+            .onChange(of: library.blocksGameplayTouch) { _ in configureGamepad(landscape: landscape) }
             .onDisappear { GamepadInput.shared.configureTouch(controls: []); TouchMouseGate.padOverlay = false }
         }
         .ignoresSafeArea()
@@ -4305,10 +4305,14 @@ struct TouchControlButton: View {
             }
         }
         .onDisappear { if control.action.isPad { padVector = .zero; isDown = false } }
-        .onChange(of: m.editing) { _, _ in if control.action.isPad { padVector = .zero; isDown = false } }
-        .onChange(of: screen) { _, _ in if control.action.isPad { padVector = .zero; isDown = false } }
-        .onChange(of: control.action) { old, new in
-            if old.isPad || new.isPad { padVector = .zero; isDown = false }
+        .onChange(of: m.editing) { _ in if control.action.isPad { padVector = .zero; isDown = false } }
+        .onChange(of: screen) { _ in if control.action.isPad { padVector = .zero; isDown = false } }
+        .onChange(of: control.action) { _ in
+            // Phase 2: iOS 15 单参 onChange 拿不到旧值。原逻辑是
+            // "old.isPad || new.isPad 就重置"；padVector/isDown 只对 pad 控件
+            // 有意义（TouchPadSurface 仅在 action.padName 存在时出现），
+            // action 变化时无条件重置是行为等价的超集。
+            padVector = .zero; isDown = false
         }
         .position(x: CGFloat(control.nx) * screen.width,
                   y: CGFloat(control.ny) * screen.height)
