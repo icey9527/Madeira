@@ -25,6 +25,16 @@ LLVM_MINGW_NAME="llvm-mingw-${LLVM_MINGW_VER}-ucrt-macos-universal"
 LLVM_MINGW_SHA="bd85a3975723815cef28dbbd2ca2cb0c926f6b348a12a0453f39f7af273cb3f7"
 FREETYPE_TAG="VER-2-13-3"
 NPROC="$(sysctl -n hw.ncpu)"
+# 提速关键（GPT 复核 2026-10-11）: cmake --build 不给 --parallel 就是串行！
+# build/fex-ios/build.sh 里没有 --parallel，FEX 此前一直在单核编译。
+# CMAKE_BUILD_PARALLEL_LEVEL 会被 cmake --build（make/ninja）自动采用。
+export CMAKE_BUILD_PARALLEL_LEVEL="$NPROC"
+# ccache: FEX 的 ENABLE_CCACHE=ON 会 find_program(ccache) 自动接线；
+# 缓存目录放在工作区内以便 actions/cache 保存（.gitignore 已排除）。
+export CCACHE_DIR="$R/.ccache"
+export CCACHE_MAXSIZE=3G
+export CCACHE_COMPILERCHECK=content
+mkdir -p "$CCACHE_DIR"
 
 step() { printf '\n\033[1;34m===== [ci] %s =====\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m[ci] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -74,8 +84,17 @@ stage_deps() {
   xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 \
     || die "iphoneos SDK 不可用（xcode-select -p=$(xcode-select -p)）"
 
-  step "brew 工具 (bison / flex / sevenzip)"
-  brew install bison flex sevenzip
+  step "构建环境版本记录（image 漂移时用于区分环境问题/代码问题）"
+  sw_vers
+  echo "xcodebuild: $(xcodebuild -version | head -1)"
+  echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null)"
+  echo "clang: $(clang --version | head -1)"
+  echo "cmake: $(cmake --version | head -1)"
+  echo "bison: $(bison --version 2>/dev/null | head -1)（必须 >= 3.0，且来自 brew 而非系统 2.3）"
+  echo "flex: $(flex --version 2>/dev/null | head -1)"
+
+  step "brew 工具 (bison / flex / sevenzip / ccache)"
+  brew install bison flex sevenzip ccache
 
   step "llvm-mingw $LLVM_MINGW_VER 工具链"
   if [ ! -x "toolchains/$LLVM_MINGW_NAME/bin/arm64ec-w64-mingw32-clang" ]; then
@@ -119,6 +138,11 @@ stage_deps() {
         > app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt
     fi
     ls app/Madeira/x86_64-vcruntime
+    if [ -f app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt ]; then
+      echo "VCRUNTIME_STATUS=PLACEHOLDER"
+    else
+      echo "VCRUNTIME_STATUS=COMPLETE"
+    fi
   fi
 
   step "freetype 源码 (research/freetype, shallow)"
@@ -129,13 +153,25 @@ stage_deps() {
 
 stage_toolchains() {
   step "GnuTLS / GMP / Nettle (build/gnutls-ios)"
-  bash build/gnutls-ios/build.sh
+  if [ -f toolchains/gnutls-ios/lib/libgnutls.a ]; then
+    echo "  [cache] 命中 toolchains 缓存，跳过"
+  else
+    bash build/gnutls-ios/build.sh
+  fi
 
   step "FFmpeg, LGPL 极简配置 (build/ffmpeg)"
-  bash build/ffmpeg/build.sh
+  if [ -f app/Madeira/libavcodec.a ] && [ -d toolchains/ffmpeg-ios/include ]; then
+    echo "  [cache] 命中 toolchains 缓存，跳过"
+  else
+    bash build/ffmpeg/build.sh
+  fi
 
   step "freetype 静态库 (build/freetype-ios)"
-  bash build/freetype-ios/build.sh
+  if [ -f build/freetype-ios/build/libfreetype.a ]; then
+    echo "  [cache] 命中 toolchains 缓存，跳过"
+  else
+    bash build/freetype-ios/build.sh
+  fi
 }
 
 stage_native() {
@@ -147,6 +183,14 @@ stage_native() {
   git -C FEX submodule update --init --depth 1 \
     $(git -C FEX config -f .gitmodules --name-only | grep -v 'tests-bins' | tr '\n' ' ')
   echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+
+  step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
+  for sub in FEX wine dxmt madeira-dock; do
+    expected="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
+    actual="$(git -C "$sub" rev-parse HEAD)"
+    printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
+    [ "$expected" = "$actual" ] || { echo "::error::Submodule SHA mismatch: $sub"; exit 1; }
+  done
 
   step "Python 依赖（FEX 的 CPU 检测脚本需要 packaging）"
   # runner 的 Homebrew Python 受 PEP 668 保护；FEX 配置期会调用
@@ -233,12 +277,21 @@ bootstrap_wineserver_base() {
 }
 
 stage_wine() {
+  step "工具链版本确认（configure 实际使用的 bison/flex 必须来自 brew）"
+  command -v bison && bison --version | head -1
+  command -v flex && flex --version | head -1
+
   step "wine configure: build-macos (config.h + widl 头文件)"
   if [ ! -f wine/build-macos/Makefile ]; then
     mkdir -p wine/build-macos
     (cd wine/build-macos && ../configure --disable-tests --without-x)
   fi
   make -C wine/build-macos -j "$NPROC" include
+  hdrs_m="$(find wine/build-macos/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
+  echo "  build-macos 生成头文件数: $hdrs_m"
+  [ -f wine/build-macos/include/config.h ] || { echo "::error::build-macos/include/config.h 缺失"; exit 1; }
+  find wine/build-macos/include -name 'mfobjects.h' -o -name 'mftransform.h' 2>/dev/null \
+    | head -2 | grep . || echo "  [warn] ntapi 的 widl 头（mfobjects/mftransform）未找到——ntdll-unix 编译会再暴露"
 
   step "wine configure: build-arm64ec (dwrite 的 widl 头文件)"
   export PATH="$R/toolchains/$LLVM_MINGW_NAME/bin:$PATH"
@@ -248,6 +301,10 @@ stage_wine() {
       ../configure --enable-archs=arm64ec --without-x --disable-tests --enable-winegstreamer)
   fi
   make -C wine/build-arm64ec -j "$NPROC" include
+  hdrs_x="$(find wine/build-arm64ec/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
+  echo "  build-arm64ec 生成头文件数: $hdrs_x"
+  [ -f wine/build-arm64ec/include/dwrite.h ] \
+    || echo "  [warn] build-arm64ec/include/dwrite.h 未生成——dwrite_unixlib 编译会再暴露"
 
   step "libntdll_unix.a (build/ntdll-unix)"
   bash build/ntdll-unix/build.sh
@@ -263,24 +320,51 @@ stage_wine() {
 }
 
 stage_app() {
+  step "磁盘保护线（app 构建前必须 >= 30 GiB 可用）"
+  free_kb="$(df -Pk / | awk 'NR==2{print $4}')"
+  echo "  可用: $(( ${free_kb:-0} / 1024 / 1024 )) GiB"
+  if [ "${free_kb:-0}" -lt $((30 * 1024 * 1024)) ]; then
+    echo "::error::app 构建前磁盘可用不足 30 GiB（run #8 的死法，不重演）"
+    df -h /
+    exit 1
+  fi
+
   step "libdxmt_combined.a 占位（真实构建需 iOS LLVM，Phase 4 再做）"
+  echo "DXMT_STATUS=STUB | BUILD_PURPOSE=LINK_SMOKE_TEST_ONLY"
   if [ ! -s app/Madeira/libdxmt_combined.a ]; then
     printf 'int __madeira_ci_dxmt_placeholder = 0;\n' > /tmp/dxmt_stub.c
     xcrun -sdk iphoneos clang -arch arm64 -c /tmp/dxmt_stub.c -o /tmp/dxmt_stub.o
     ar rcs app/Madeira/libdxmt_combined.a /tmp/dxmt_stub.o
   fi
 
-  step "xcodebuild 编译冒烟 (Debug, 未签名)"
-  set -o pipefail
-  if ! xcodebuild -project app/Madeira.xcodeproj -scheme Madeira \
-        -configuration Debug -destination 'generic/platform=iOS' \
-        CODE_SIGNING_ALLOWED=NO COMPILER_INDEX_STORE_ENABLE=NO \
-        build 2>&1 | tee "$LOGDIR/xcodebuild.log"; then
-    echo "======== xcodebuild 失败，末 150 行 ========"
-    tail -n 150 "$LOGDIR/xcodebuild.log"
-    exit 1
+  step "DXMT 占位符号审计（确认其余部分不静态引用 dxmt）"
+  if xcrun -sdk iphoneos nm -u app/Madeira/libntdll_unix.a 2>/dev/null | c++filt \
+      | grep -Ei 'dxmt|winemetal|airconv' | head -20; then
+    echo "  ^ 上述符号被静态引用 —— 空库占位会在链接期暴露（属预期，按报错继续）"
+  else
+    echo "  libntdll_unix.a 无静态 dxmt 引用 —— 空库占位预期可链接通过"
   fi
+
+  DD="${RUNNER_TEMP:-$R/ci-DD}/Madeira-DD"
+  step "xcodebuild 编译冒烟 (Debug, 未签名, DerivedData=$DD)"
+  xcodebuild -project app/Madeira.xcodeproj -scheme Madeira \
+    -configuration Debug -destination 'generic/platform=iOS' \
+    -derivedDataPath "$DD" \
+    CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+    COMPILER_INDEX_STORE_ENABLE=NO \
+    build > "$LOGDIR/xcodebuild.log" 2>&1
   echo "======== APP BUILD OK ========"
+  tail -n 5 "$LOGDIR/xcodebuild.log"
+
+  step "构建产物校验（部署目标 / MetalFX 链接形态）"
+  APP_BUILT="$DD/Build/Products/Debug-iphoneos/Madeira.app"
+  [ -d "$APP_BUILT" ] || { ls "$DD/Build/Products" 2>/dev/null || true; die "构建成功但找不到 Madeira.app"; }
+  echo "  App  MinimumOSVersion = $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/Info.plist" 2>/dev/null)"
+  if [ -f "$APP_BUILT/PlugIns/MadeiraJITHelper.appex/Info.plist" ]; then
+    echo "  JITHelper MinimumOSVersion = $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/PlugIns/MadeiraJITHelper.appex/Info.plist")"
+  fi
+  echo "  MetalFX 链接形态（17.0 基线应为强链接；Phase 2 降到 15.6 必须改 Weak）:"
+  otool -L "$APP_BUILT/Madeira" | grep -i metalfx || echo "  [warn] 主二进制动态依赖中未见 MetalFX"
 }
 
 # ---------- main ----------

@@ -41,6 +41,26 @@ jobs:
             *) echo "::error::CI 只允许在 port/ios15.6 分支运行（当前 $GITHUB_REF），不要拿原版分支跑构建"; exit 1 ;;
           esac
 
+      - name: Cache toolchains（llvm-mingw / gnutls / ffmpeg / freetype 产物）
+        uses: actions/cache@v4
+        with:
+          path: |
+            toolchains
+            build/freetype-ios/build
+            app/Madeira/libavformat.a
+            app/Madeira/libavcodec.a
+            app/Madeira/libswresample.a
+            app/Madeira/libavutil.a
+          key: toolchains-macos26-v2-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh', 'tools/ci/build-all.sh') }}
+          restore-keys: toolchains-macos26-v2-
+
+      - name: Cache ccache（FEX 编译缓存，key 稳定、靠 ccache 自身内容判断命中）
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-macos26-v1-${{ hashFiles('build/fex-ios/build.sh') }}
+          restore-keys: ccache-macos26-v1-
+
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
         run: tools/ci/build-all.sh deps
 

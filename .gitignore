@@ -168,3 +168,6 @@ app/Madeira/arm64ec-windows/dock-notices.txt
 
 # CI (tools/ci/build-all.sh) 日志
 ci-logs/
+
+# CI ccache 缓存目录（actions/cache 保存）
+.ccache/
