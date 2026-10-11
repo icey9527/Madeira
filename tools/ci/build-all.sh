@@ -110,7 +110,9 @@ stage_deps() {
 
   step "brew 工具 (bison / flex / sevenzip / ccache)"
   if [ "$APP_ONLY" = 1 ]; then
-    tic; brew install --quiet sevenzip; toc "deps:brew-install(sevenzip)"
+    if [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
+      tic; brew install --quiet sevenzip; toc "deps:brew-install(sevenzip)"
+    fi
   else
     tic; brew install bison flex sevenzip ccache; toc "deps:brew-install"
   fi
@@ -209,15 +211,22 @@ stage_toolchains() {
 stage_native() {
   step "浅克隆子模块（app-only 仅需 FEX；完整模式全量并跳过三个测试数据仓）"
   if [ "$APP_ONLY" = 1 ]; then
-    tic; git submodule update --init --depth 1 -- FEX; toc "native:fex-clone"
+    tic; git submodule update --init --depth 1 --jobs "$NPROC" -- FEX; toc "native:fex-clone"
   else
     # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
-    tic; git submodule update --init --depth 1 -- FEX wine dxmt madeira-dock; toc "native:submodule-clone"
+    tic; git submodule update --init --depth 1 --jobs "$NPROC" -- FEX wine dxmt madeira-dock; toc "native:submodule-clone"
   fi
   # FEX 嵌套子模块: BUILD_TESTING=OFF，三个 *-tests-bins 数据仓（数百 MB）
   # 不参与构建，跳过；其余（fmt/range-v3/rpmalloc/jemalloc/vixl 等）保留。
-  git -C FEX submodule update --init --depth 1 \
-    $(git -C FEX config -f .gitmodules --name-only | grep -v 'tests-bins' | tr '\n' ' ')
+  local fex_modules fex_paths=() module_key module_path
+  fex_modules="$(git -C FEX config -f .gitmodules --get-regexp '^submodule\..*\.path$')"
+  while read -r module_key module_path; do
+    case "$module_path" in
+      *tests-bins*) ;;
+      *) fex_paths+=("$module_path") ;;
+    esac
+  done <<< "$fex_modules"
+  git -C FEX submodule update --init --depth 1 --jobs "$NPROC" -- "${fex_paths[@]}"
   echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
 
   if [ "$APP_ONLY" != 1 ]; then
@@ -405,7 +414,10 @@ stage_app() {
     build > "$LOGDIR/xcodebuild.log" 2>&1 || rc=$?
   toc "app:xcodebuild"
   if [ "$rc" -ne 0 ]; then
-    if [ "$APP_ONLY" = 1 ] && grep -qE "Undefined symbol[s]?|ld: symbol|error: linker command" "$LOGDIR/xcodebuild.log"; then
+    if [ "$APP_ONLY" = 1 ] \
+        && grep -qE 'Undefined symbols?(:| for architecture)' "$LOGDIR/xcodebuild.log" \
+        && ! grep -E '(^|[[:space:]])(fatal )?error:|^Command .* failed' "$LOGDIR/xcodebuild.log" \
+          | grep -Ev 'error: linker command failed|^Command Ld( .*)? failed'; then
       echo "======== COMPILE-ONLY PASS ========"
       echo "Swift/ObjC 编译全部通过；仅链接失败（app-only 空桩库的预期结果）。未定义符号示例："
       grep -B1 -A4 "Undefined symbol" "$LOGDIR/xcodebuild.log" | head -24 || true
@@ -425,8 +437,12 @@ stage_app() {
   if [ -f "$APP_BUILT/PlugIns/MadeiraJITHelper.appex/Info.plist" ]; then
     echo "  JITHelper MinimumOSVersion = $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/PlugIns/MadeiraJITHelper.appex/Info.plist")"
   fi
-  echo "  MetalFX 链接形态（17.0 基线应为强链接；Phase 2 降到 15.6 必须改 Weak）:"
-  otool -L "$APP_BUILT/Madeira" | grep -i metalfx || echo "  [warn] 主二进制动态依赖中未见 MetalFX"
+  local app_minos metalfx_load
+  app_minos="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/Info.plist")"
+  [ "$app_minos" = 15.6 ] || die "主 App MinimumOSVersion 必须为 15.6，实际为 $app_minos"
+  metalfx_load="$(otool -l "$APP_BUILT/Madeira" | awk '/^[[:space:]]*cmd LC_/ { command = $2 } /name .*MetalFX.framework/ { print command }')"
+  [ "$metalfx_load" = LC_LOAD_WEAK_DYLIB ] || die "MetalFX 必须弱链接，实际为 ${metalfx_load:-MISSING}"
+  echo "  MetalFX: $metalfx_load"
 }
 
 # ---------- main ----------

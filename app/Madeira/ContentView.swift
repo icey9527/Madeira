@@ -1274,25 +1274,34 @@ struct ContentView: View {
          * no NavigationLinks anywhere in the app, so nothing depended on the
          * two-column selection behaviour. */
         NavigationView {
-            Group {
-                if library.enabled && library.current != nil {
-                    sessionBody
-                        .navigationBarHidden(true)
-                } else if library.enabled {
-                    LibraryView(play: launchLibraryEntry, enableJIT: enableJIT,
-                                startDock: { startDock($0, compactPool: $1) })
-                } else {
-                    developerBody
-                }
+            lifecycleContent
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private var frontendContent: some View {
+        Group {
+            if library.enabled && library.current != nil {
+                sessionBody
+                    .navigationBarHidden(true)
+            } else if library.enabled {
+                LibraryView(play: launchLibraryEntry, enableJIT: enableJIT,
+                            startDock: { startDock($0, compactPool: $1) })
+            } else {
+                developerBody
             }
+        }
             .navigationTitle("Madeira")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.regularMaterial, for: .navigationBar)
             // The library keeps a material bar only before iOS 26. From iOS 26 the
             // system draws its soft scroll edge effect instead: content scrolls
             // under the title, the buttons and the search field behind a
             // progressive blur (as in the App Store), with no hard edge.
-            .toolbarBackground(library.enabled && !Self.systemScrollEdge ? .visible : .automatic, for: .navigationBar)
+            .navigationMaterial15(visible: library.enabled && !Self.systemScrollEdge)
+    }
+
+    private var restartContent: some View {
+        frontendContent
             // A second session cannot start in this process; offer to close Madeira.
             .alert("Restart Madeira", isPresented: Binding(get: { library.restartNotice != nil },
                                                             set: { if !$0 { library.restartNotice = nil } })) {
@@ -1302,6 +1311,10 @@ struct ContentView: View {
                 }
                 Button("Later", role: .cancel) { library.restartNotice = nil }
             } message: { Text(library.restartNotice ?? "") }
+    }
+
+    private var jitContent: some View {
+        restartContent
             // CS_DEBUGGED without a debugger (JIT enabled outside Madeira): offer Madeira's own request.
             .alert("Enable JIT", isPresented: Binding(get: { library.jitNotice != nil },
                                                       set: { if !$0 { library.jitNotice = nil } })) {
@@ -1309,6 +1322,10 @@ struct ContentView: View {
                 Button("Later", role: .cancel) { library.jitNotice = nil }
             } message: { Text(library.jitNotice ?? "") }
             .sheet(isPresented: $jitCoordinator.showSetup) { JITSetupView() }
+    }
+
+    private var cloudContent: some View {
+        jitContent
             // A Steam game's saves may not be the latest (cloudClear).
             .alert(library.cloudNotice?.title ?? "Steam Cloud", isPresented: Binding(get: { library.cloudNotice != nil },
                                                                                      set: { if !$0 { library.cloudNotice = nil } })) {
@@ -1330,6 +1347,10 @@ struct ContentView: View {
                     Button("Cancel", role: .cancel) { library.cloudNotice = nil; library.cloudRetry = nil }
                 }
             } message: { Text(library.cloudNotice?.message ?? "") }
+    }
+
+    private var lifecycleContent: some View {
+        cloudContent
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 library.refreshFlag()
                 if library.enabled && library.current == nil { MetalHostView.shared.isHidden = true }
@@ -1353,8 +1374,6 @@ struct ContentView: View {
             // now or, from a cold start, once the library is up.
             .onReceive(ShortcutRouter.shared.$pendingExe) { _ in launchPendingShortcut() }
             .onChange(of: library.enabled) { _ in launchPendingShortcut() }
-        }
-        .navigationViewStyle(.stack)
     }
 
     /// The developer interface. Orientation comes from the view's own shape, not

@@ -549,12 +549,12 @@ struct ControlLayoutMenu: View {
                 }
             }
             if !presets.readOnly {
-                Button("Create new layout", systemImage: "plus") { request(.create) }
+                Button { request(.create) } label: { Label("Create new layout", systemImage: "plus") }
             }
             if let a = presets.active, !ControlPresetStore.isBuiltIn(a.id), !presets.readOnly {
-                Button("Delete \u{201C}\(a.name)\u{201D}", systemImage: "trash", role: .destructive) {
+                Button(role: .destructive) {
                     confirmDelete = a
-                }
+                } label: { Label("Delete \u{201C}\(a.name)\u{201D}", systemImage: "trash") }
             }
         } label: {
             switch style {

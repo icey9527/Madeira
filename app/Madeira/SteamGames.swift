@@ -997,7 +997,7 @@ struct SteamCloudQuitRow: View {
     var body: some View {
         if SteamOwnedLibrary.cloudQuitEnabled, steam.signedIn {
             VStack(alignment: .leading, spacing: 8) {
-                Button("Upload saves and close Madeira", systemImage: "icloud.and.arrow.up") { run(replaceCloud: false) }
+                Button { run(replaceCloud: false) } label: { Label("Upload saves and close Madeira", systemImage: "icloud.and.arrow.up") }
                     .disabled(working)
                 switch steam.cloudQuit {
                 case .working(let text):

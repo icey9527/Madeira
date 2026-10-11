@@ -1278,7 +1278,7 @@ struct LibraryLargeTitle: ToolbarContent {
         if #available(iOS 26.0, *) {
             ToolbarItem(placement: .topBarLeading) { LibraryTitleText() }.sharedBackgroundVisibility(.hidden)
         } else {
-            ToolbarItem(placement: .topBarLeading) { LibraryTitleText() }
+            ToolbarItem(placement: .navigationBarLeading) { LibraryTitleText() }
         }
     }
 }
@@ -1298,7 +1298,7 @@ struct LibraryTitleText: View {
             Image(systemName: jit ? "bolt.fill" : "bolt")
                 .font(.system(size: LibraryHeaderAlignment.titleFont().pointSize * 0.53, weight: .thin))
                 .foregroundStyle(jit ? Color.accentColor : Color.primary)
-                .contentTransition(.symbolEffect(.replace))
+                .symbolReplacement15()
                 .alignmentGuide(.firstTextBaseline) { d in d.height / 2 + LibraryHeaderAlignment.titleFont().capHeight / 2 }
                 .accessibilityLabel(jit ? "JIT enabled" : "JIT not enabled")
         }
@@ -2502,7 +2502,7 @@ struct LibraryView: View {
         }
     }
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .navigationBarTrailing) {
             Menu {
                 Picker("Library layout", selection: $layout) {
                     Label("Cards", systemImage: "square.grid.2x2").tag("cards")
@@ -2524,10 +2524,10 @@ struct LibraryView: View {
                 }
             } label: { Label("Library options", systemImage: "line.3.horizontal.decrease") }
         }
-        ToolbarItem(placement: .topBarTrailing) { Button { browser = true } label: { Label("Add executable", systemImage: "plus") } }
+        ToolbarItem(placement: .navigationBarTrailing) { Button { browser = true } label: { Label("Add executable", systemImage: "plus") } }
     }
     @ToolbarContentBuilder private var settingsToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItem(placement: .navigationBarTrailing) {
             Button(action: enableJIT) {
                 HStack(spacing: 6) {
                     Text("Enable JIT")
@@ -2943,8 +2943,8 @@ struct LibraryDetail: View {
                 }
                 if entry.desktop != true { Section("Library details") {
                     TextField("Title", text: $entry.title)
-                    Button("Find on Steam", systemImage: "magnifyingglass") { findCover = true }
-                    Button("Choose cover image", systemImage: "photo") { importCover = true }
+                    Button { findCover = true } label: { Label("Find on Steam", systemImage: "magnifyingglass") }
+                    Button { importCover = true } label: { Label("Choose cover image", systemImage: "photo") }
                     if entry.coverFile != nil { Button((entry.steamAppID ?? entry.steamID) != nil ? "Use Steam artwork" : "Remove cover image") { entry.coverFile = nil } }
                 } }
                 // A Steam game's cloud saves, then how it starts, under its library
@@ -3136,8 +3136,7 @@ struct LibraryDetail: View {
                 if let error { Section { Text(error).foregroundStyle(.red) } }
             }
             .navigationTitle("Game details").navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.regularMaterial, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .navigationMaterial15(visible: true)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.save(entry); dismiss() } } }
             .sheet(isPresented: $findCover) { SteamSearchView(query: entry.title) { match in entry.steamID = match.id; entry.title = match.name; entry.coverFile = nil } }
             .fileImporter(isPresented: $importCover, allowedContentTypes: [.image]) { result in
@@ -3989,7 +3988,7 @@ struct LibraryHUD: View {
     private var bindsMenu: some View {
         VStack(spacing: 0) {
             HStack {
-                Button("Session", systemImage: "chevron.left") { bindsPage = false }.buttonStyle(.borderless)
+                Button { bindsPage = false } label: { Label("Session", systemImage: "chevron.left") }.buttonStyle(.borderless)
                 Spacer()
                 Text("Controller binds").font(.headline)
                 Spacer()
@@ -4003,7 +4002,7 @@ struct LibraryHUD: View {
                                     mouseVertical: Binding(get: { model.padMouseVertical == 1 ? nil : model.padMouseVertical },
                                                            set: { model.padMouseVertical = $0 ?? 1; model.saveCurrentProfile() }),
                                     controls: controls.controls)
-            }.scrollContentBackground(.hidden)
+            }.hiddenScrollBackground15()
         }
     }
 
@@ -4023,18 +4022,18 @@ struct LibraryHUD: View {
                 }
                 LabeledContent15("Opacity") { Slider(value: $model.opacity, in: 0.15...1) }
                 LabeledContent15("Size") { Slider(value: $controls.sizeScale, in: 0.5...2) }
-                Button("Edit controls", systemImage: "slider.horizontal.3") { controls.visible = true; controls.editing = true; model.menu = false }
+                Button { controls.visible = true; controls.editing = true; model.menu = false } label: { Label("Edit controls", systemImage: "slider.horizontal.3") }
                 if GamepadInput.keyboardMouseAvailable {
                     ControllerModeChoice(mode: Binding(get: { model.controllerMode }, set: { model.controllerMode = $0; model.saveCurrentProfile() }))
                     if model.controllerMode == "keys" {
-                        Button("Controller binds", systemImage: "gamecontroller") { bindsPage = true }
+                        Button { bindsPage = true } label: { Label("Controller binds", systemImage: "gamecontroller") }
                     } else if model.controllerMode == "dinput" {
                         // ml1240: the DirectInput device exists only from the launch on.
                         Text("XInput and DirectInput applies to the next launch.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Button("Keyboard", systemImage: "keyboard") { model.menu = false; LibraryKeyboard.show() }
+                Button { model.menu = false; LibraryKeyboard.show() } label: { Label("Keyboard", systemImage: "keyboard") }
                 Divider()
                 FPSChoice(mode: Binding(get: { model.fpsMode }, set: { model.setFPS($0) }))
                 // Saved to the game with the rest of the session's profile.
@@ -4070,14 +4069,14 @@ struct LibraryHUD: View {
                 if sessionTools && sessionDiagnostics {
                     Divider()
                     Text("Diagnostics").font(.headline)
-                    Button("Capture the next frame", systemImage: "camera.viewfinder") {
+                    Button {
                         model.menu = false
                         // After the menu has gone, so the frame shows what the player saw.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                             madeira_capture_request(1)
                             LogStore.shared.log("[capture] frame capture requested from the in-game menu")
                         }
-                    }
+                    } label: { Label("Capture the next frame", systemImage: "camera.viewfinder") }
                     LabeledContent15("GPU sync") {
                         Picker("GPU sync", selection: Binding(get: { fenceMode }, set: { mode in
                             fenceMode = mode; FPSOverlayFenceMode.current = mode
@@ -4449,6 +4448,31 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
 }
 
 extension View {
+    @ViewBuilder func navigationMaterial15(visible: Bool) -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbarBackground(.regularMaterial, for: .navigationBar)
+                .toolbarBackground(visible ? .visible : .automatic, for: .navigationBar)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder func symbolReplacement15() -> some View {
+        if #available(iOS 17.0, *) {
+            self.contentTransition(.symbolEffect(.replace))
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder func hiddenScrollBackground15() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollContentBackground(.hidden)
+        } else {
+            self
+        }
+    }
+
     /// iOS 15 compatible: persistentSystemOverlays (iOS 16+) - ignored on old systems.
     @ViewBuilder func persistentSystemOverlays15(_ visibility: Visibility) -> some View {
         if #available(iOS 16.0, *) {
