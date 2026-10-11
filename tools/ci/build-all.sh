@@ -32,20 +32,47 @@ die()  { printf '\033[1;31m[ci] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 brew_prefix="$(brew --prefix)"
 export HOMEBREW_NO_AUTO_UPDATE=1
 export PATH="$brew_prefix/opt/bison/bin:$brew_prefix/opt/flex/bin:$brew_prefix/bin:$PATH"
+# 每个阶段都是独立的 GitHub Actions step（新 shell），把工具链选择对齐到
+# 系统级 xcode-select 的结果，防止镜像的 DEVELOPER_DIR 指向已删除的 Xcode。
+export DEVELOPER_DIR="$(xcode-select -p)"
 
 stage_deps() {
   step "runner 磁盘瘦身（macOS runner 磁盘是最稀缺资源）"
-  default_xcode="$(xcode-select -p)"
+  # 磁盘基线
+  echo "  清理前: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+  # 在用的 Xcode 绝不删: 同时尊重 xcode-select -p 与镜像的 DEVELOPER_DIR
+  # （run #9 的教训: 只看 xcode-select 把镜像默认的 Xcode 删了，
+  #  后续 xcrun 全部 "SDK iphoneos cannot be located"）。
+  keep1="$(xcode-select -p 2>/dev/null || true)"
+  keep2="${DEVELOPER_DIR:-}"
+  keep_apps=""
+  for k in "$keep1" "$keep2"; do
+    [ -n "$k" ] || continue
+    keep_apps="$keep_apps ${k%/Contents/Developer}"
+  done
   for d in /Applications/Xcode*.app; do
     [ -d "$d" ] || continue
-    if [ "$(cd "$d" && pwd -P)" != "$(cd "$default_xcode" && pwd -P)" ]; then
-      echo "  删除非默认 Xcode: $d"
+    skip=""
+    for k in $keep_apps; do
+      [ "$(cd "$d" && pwd -P)" = "$(cd "$k" && pwd -P)" ] && skip=1
+    done
+    if [ -z "$skip" ]; then
+      echo "  删除: $d"
       sudo rm -rf "$d"
     fi
   done
   sudo rm -rf /Users/runner/Library/Android/sdk /usr/local/lib/android \
     /usr/local/.ghcup /opt/hostedtoolcache/CodeQL 2>/dev/null || true
-  echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+  echo "  清理后: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+
+  # 清理后必须验证 iOS SDK 可用，坏则尽快失败并给出诊断
+  kept="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+  [ -n "$kept" ] || die "磁盘清理后 /Applications 下没有任何 Xcode 了"
+  sudo xcode-select -s "$kept"
+  export DEVELOPER_DIR="$kept"
+  echo "  使用 Xcode: $kept"
+  xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 \
+    || die "iphoneos SDK 不可用（xcode-select -p=$(xcode-select -p)）"
 
   step "brew 工具 (bison / flex / sevenzip)"
   brew install bison flex sevenzip
