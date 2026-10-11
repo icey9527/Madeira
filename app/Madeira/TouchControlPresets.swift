@@ -505,7 +505,7 @@ struct ControlLayoutMenu: View {
     var body: some View {
         Group {
             if style == .row {
-                LabeledContent("Controller layout") { menu }
+                LabeledContent15("Controller layout") { menu }
             } else {
                 menu
             }

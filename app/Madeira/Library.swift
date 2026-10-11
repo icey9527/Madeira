@@ -3083,10 +3083,10 @@ struct LibraryDetail: View {
                             }
                         }
                     }
-                    LabeledContent("Control opacity") {
+                    LabeledContent15("Control opacity") {
                         Slider(value: Binding(get: { entry.controlOpacity ?? 0.7 }, set: { entry.controlOpacity = $0 }), in: 0.15...1)
                     }
-                    LabeledContent("Control size") {
+                    LabeledContent15("Control size") {
                         Slider(value: Binding(get: { entry.controlSize ?? 1 }, set: { entry.controlSize = $0 }), in: 0.5...2)
                     }
                     Text("Arrange buttons and choose XInput, mouse, or keyboard actions from the in-game menu.").font(.caption).foregroundStyle(.secondary)
@@ -3099,7 +3099,7 @@ struct LibraryDetail: View {
                     NavigationLink {
                         LibraryGameConfigEditor(text: Binding(get: { entry.config ?? "" }, set: { entry.config = $0.isEmpty ? nil : $0 }))
                     } label: {
-                        LabeledContent("This game's config", value: Self.configSummary(entry.config))
+                        LabeledContent15("This game's config", value: Self.configSummary(entry.config))
                     }
                 } header: { Text("Advanced") } footer: {
                     Text("Lines in madeira.cfg's format for this game only. A key set here wins over madeira.cfg wherever the runtime reads it, env.NAME lines are exported after madeira.cfg's, and dxmt options are added to madeira.cfg's. Applies from the next start.")
@@ -3256,7 +3256,7 @@ struct ControllerBindsPage: View {
         }
         if effective("RS").stickKeys == nil {
             Section("Right stick as mouse") {
-                LabeledContent("Vertical speed") {
+                LabeledContent15("Vertical speed") {
                     HStack {
                         Slider(value: Binding(get: { mouseVertical ?? 1 }, set: { mouseVertical = abs($0 - 1) < 0.01 ? nil : $0 }), in: 0.25...1.5, step: 0.05)
                         Text("\(Int(((mouseVertical ?? 1) * 100).rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
@@ -3287,7 +3287,7 @@ struct ControllerBindsPage: View {
     private func row(_ name: String) -> some View {
         let effective = effective(name)
         let changed = binds?[name] != nil
-        return LabeledContent(PadBindings.displayName(name)) {
+        return LabeledContent15(PadBindings.displayName(name)) {
             Menu {
                 if name == "LS" || name == "RS" {
                     pick(name, name == "RS" ? "Mouse" : "Nothing", .none)
@@ -3442,7 +3442,7 @@ struct DockOfflineMark: View {
 struct ControllerModeChoice: View {
     @Binding var mode: String?
     var body: some View {
-        LabeledContent("Controller") {
+        LabeledContent15("Controller") {
             Picker("Controller", selection: Binding(get: { mode ?? "" }, set: { mode = $0.isEmpty ? nil : $0 })) {
                 Text("Game's own support").tag("")
                 Text("XInput and DirectInput").tag("dinput")
@@ -3722,7 +3722,7 @@ struct LibraryPointerSettings: View {
         Text(input.touchMode ? "Tap the screen to position and click. Hold and move to drag. Two fingers: right click or scroll."
              : (input.relative ? "Drag to send relative mouse movement for mouse-look. Tap to click." : "Drag the pointer like a trackpad. Tap to click."))
             .font(.caption).foregroundStyle(.secondary)
-        LabeledContent("Touch sensitivity") {
+        LabeledContent15("Touch sensitivity") {
             Slider(value: input.relative ? $input.sensRel : $input.sensAbs, in: 0.1...8)
         }
     }
@@ -4021,8 +4021,8 @@ struct LibraryHUD: View {
                         if openedEditor { model.menu = false }
                     }
                 }
-                LabeledContent("Opacity") { Slider(value: $model.opacity, in: 0.15...1) }
-                LabeledContent("Size") { Slider(value: $controls.sizeScale, in: 0.5...2) }
+                LabeledContent15("Opacity") { Slider(value: $model.opacity, in: 0.15...1) }
+                LabeledContent15("Size") { Slider(value: $controls.sizeScale, in: 0.5...2) }
                 Button("Edit controls", systemImage: "slider.horizontal.3") { controls.visible = true; controls.editing = true; model.menu = false }
                 if GamepadInput.keyboardMouseAvailable {
                     ControllerModeChoice(mode: Binding(get: { model.controllerMode }, set: { model.controllerMode = $0; model.saveCurrentProfile() }))
@@ -4040,7 +4040,7 @@ struct LibraryHUD: View {
                 // Saved to the game with the rest of the session's profile.
                 // MADEIRA_SESSION_TOOLS=0 hides it.
                 if sessionTools {
-                    LabeledContent("Aspect & scaling") {
+                    LabeledContent15("Aspect & scaling") {
                         Picker("Aspect & scaling", selection: $model.displayMode) {
                             ForEach(DisplayMode.allCases, id: \.self) { mode in Label(mode.label, systemImage: mode.symbol).tag(mode) }
                         }.pickerStyle(.menu).labelsHidden()
@@ -4078,7 +4078,7 @@ struct LibraryHUD: View {
                             LogStore.shared.log("[capture] frame capture requested from the in-game menu")
                         }
                     }
-                    LabeledContent("GPU sync") {
+                    LabeledContent15("GPU sync") {
                         Picker("GPU sync", selection: Binding(get: { fenceMode }, set: { mode in
                             fenceMode = mode; FPSOverlayFenceMode.current = mode
                             madeira_set_fence_mode(Int32(mode == 0 ? 7 : mode))
