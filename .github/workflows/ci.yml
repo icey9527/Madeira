@@ -72,11 +72,12 @@ jobs:
           restore-keys: toolchains-macos26-ios15.6-v3-
 
       - name: Cache ccache（FEX 编译缓存，key 稳定、靠 ccache 自身内容判断命中）
+        id: ccache
         if: env.APP_ONLY != '1'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-macos26-v1-${{ hashFiles('build/fex-ios/build.sh') }}
+          key: ccache-macos26-v1-${{ hashFiles('build/fex-ios/build.sh') }}-${{ github.run_id }}
           restore-keys: ccache-macos26-v1-
 
       - name: Cache VC++ 运行时 DLL（12 个，内容静态，静态 key）
@@ -133,6 +134,13 @@ jobs:
 
       - name: native（FEXCore）
         run: tools/ci/build-all.sh native
+
+      - name: Save FEX compilation cache before Wine
+        if: success() && env.APP_ONLY != '1'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
       - name: wine（configure + unix 侧静态库）
         run: tools/ci/build-all.sh wine

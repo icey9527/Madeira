@@ -327,7 +327,7 @@ stage_wine() {
   step "wine configure: build-macos (config.h + widl 头文件)"
   if [ ! -f wine/build-macos/Makefile ]; then
     mkdir -p wine/build-macos
-    (cd wine/build-macos && wine_host_command ../configure --disable-tests --without-x)
+    (cd wine/build-macos && wine_host_command ../configure --enable-win64 --disable-tests --without-x)
   fi
   wine_host_command make -C wine/build-macos -j "$NPROC" include
   hdrs_m="$(find wine/build-macos/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
