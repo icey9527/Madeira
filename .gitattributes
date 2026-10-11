@@ -1,1 +1,5 @@
 app/Frameworks/StikJIT.xcframework/** -whitespace
+
+# 保持脚本类文件为 LF，避免 Windows autocrlf 破坏 bash 脚本（AI 协作规范，见 tools/ai-commit.sh）
+*.sh text eol=lf
+.githooks/** text eol=lf

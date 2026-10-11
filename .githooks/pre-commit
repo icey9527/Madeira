@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# 软提醒（不拦截）：AI 提交必须带模型身份，避免悄悄借用人类的 git 全局身份。
+# 人类自己提交时请忽略本提醒；不想看到提示可 export AI_COMMIT=1。
+if [ -z "${AI_COMMIT:-}" ] && [ -z "${GIT_AUTHOR_NAME:-}" ]; then
+  email="$(git config user.email || true)"
+  case "$email" in
+    noreply@z.ai|noreply@deepseek.com|noreply@openai.com) ;;
+    *)
+      echo "⚠️  本次提交没有携带模型身份。" >&2
+      echo "    若这是 AI 提交，请改用:  tools/ai-commit.sh <glm|deepseek|gpt> -m \"...\"" >&2
+      echo "    若这是人类提交，忽略本提醒即可。" >&2
+      ;;
+  esac
+fi
+exit 0
