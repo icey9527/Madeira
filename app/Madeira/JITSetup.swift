@@ -532,6 +532,7 @@ enum LocalDevVPN {
 }
 
 struct JITSettingsSection: View {
+    @State private var sharingJITShortcut = false
     @ObservedObject private var coordinator = JITCoordinator.shared
     @ObservedObject private var onboarding = OnboardingModel.shared
     @ObservedObject private var shortcut = JITNetworkShortcut.shared
@@ -566,8 +567,16 @@ struct JITSettingsSection: View {
                 } label: {
                     Label("Add the \(JITNetworkShortcut.name) shortcut", systemImage: "plus.square.on.square")
                 }
-                ShareLink(item: url) {
+                // Phase 2 (iOS 15.6): ShareLink（16+）→ UIActivityViewController sheet
+                Button {
+                    sharingJITShortcut = true
+                } label: {
                     Label("No internet connection? Add local copy", systemImage: "square.and.arrow.up")
+                }
+                .sheet(isPresented: $sharingJITShortcut) {
+                    if let url = JITShortcutFile.url {
+                        ActivityShareSheet(items: [url])
+                    }
                 }
             }
             Toggle("\(JITNetworkShortcut.name) shortcut", isOn: $shortcut.enabled)
@@ -606,9 +615,9 @@ struct JITSetupView: View {
                         Text(coordinator.automaticDescription)
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    LabeledContent("StikDebug",
+                    LabeledContent15("StikDebug",
                                    value: StikJITHelper.isAvailable ? "Installed" : "Not detected")
-                    LabeledContent("Built-in helper",
+                    LabeledContent15("Built-in helper",
                                    value: MadeiraBuiltInJIT.isAvailable ? "Available" : "Unavailable")
                 } header: {
                     Text("JIT method")
@@ -618,7 +627,7 @@ struct JITSetupView: View {
 
                 if coordinator.method != .stikDebug {
                     Section {
-                        LabeledContent("Pairing", value: pairingLabel)
+                        LabeledContent15("Pairing", value: pairingLabel)
                         if OnDevicePairing.isSupported {
                             Button(coordinator.pairingSource == .onDevice ? "Pair in Madeira again" : "Pair in Madeira") {
                                 pairing.start()
@@ -671,7 +680,7 @@ struct JITSetupView: View {
                     Section { Label(status, systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
                 }
                 if let txm = coordinator.txmPresent {
-                    Section { LabeledContent("TXM/SPTM", value: txm ? "Present" : "Not present") }
+                    Section { LabeledContent15("TXM/SPTM", value: txm ? "Present" : "Not present") }
                 }
             }
             .navigationTitle("JIT setup")
