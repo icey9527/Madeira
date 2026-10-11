@@ -76,6 +76,18 @@ jobs:
           path: app/Madeira/x86_64-vcruntime
           key: vcruntime-x64-v1
 
+      - name: Resolve FEX 子模块 SHA
+        id: fexsha
+        run: echo "sha=$(git ls-tree HEAD FEX | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache FEX 子模块（工作树 + .git/modules 元数据，key=gitlink SHA）
+        uses: actions/cache@v4
+        with:
+          path: |
+            FEX
+            .git/modules/FEX
+          key: fex-submodule-${{ steps.fexsha.outputs.sha }}
+
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
         run: tools/ci/build-all.sh deps
 

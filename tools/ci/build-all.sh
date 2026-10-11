@@ -43,8 +43,15 @@ mkdir -p "$CCACHE_DIR"
 step() { printf '\n\033[1;34m===== [ci] %s =====\033[0m\n' "$*"; }
 die()  { printf '\033[1;31m[ci] ERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# 计时埋点（Claude 建议）: 关键子步骤秒级计时，汇总进运行页 Summary
+_tic_ts=0
+tic() { _tic_ts=$(date +%s); }
+toc() { local now; now=$(date +%s); local line="TIMING ${1}: $((now - _tic_ts))s"; echo "$line"; if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then echo "$line" >> "$GITHUB_STEP_SUMMARY" || true; fi; }
+
 brew_prefix="$(brew --prefix)"
 export HOMEBREW_NO_AUTO_UPDATE=1
+export HOMEBREW_NO_INSTALL_CLEANUP=1
+export HOMEBREW_NO_ENV_HINTS=1
 export PATH="$brew_prefix/opt/bison/bin:$brew_prefix/opt/flex/bin:$brew_prefix/bin:$PATH"
 # 每个阶段都是独立的 GitHub Actions step（新 shell），把工具链选择对齐到
 # 系统级 xcode-select 的结果，防止镜像的 DEVELOPER_DIR 指向已删除的 Xcode。
@@ -99,10 +106,14 @@ stage_deps() {
   echo "flex: $(flex --version 2>/dev/null | head -1)"
 
   step "Metal 工具链下载（Xcode 26 拆分为独立组件；App 的 .metal 编译必需）"
-  xcodebuild -downloadComponent MetalToolchain
+  tic; xcodebuild -downloadComponent MetalToolchain; toc "deps:metal-toolchain"
 
   step "brew 工具 (bison / flex / sevenzip / ccache)"
-  brew install bison flex sevenzip ccache
+  if [ "$APP_ONLY" = 1 ]; then
+    tic; brew install --quiet sevenzip; toc "deps:brew-install(sevenzip)"
+  else
+    tic; brew install bison flex sevenzip ccache; toc "deps:brew-install"
+  fi
 
   step "llvm-mingw $LLVM_MINGW_VER 工具链"
   if [ "$APP_ONLY" = 1 ]; then
@@ -117,6 +128,7 @@ stage_deps() {
 
   step "VC++ 运行时 DLL (app/Madeira/x86_64-vcruntime)"
   if [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
+    tic
     curl -fL --retry 3 -o /tmp/VC_redist.x64.exe "https://aka.ms/vs/17/release/vc_redist.x64.exe"
     rm -rf /tmp/vcredist && mkdir -p /tmp/vcredist
     7zz x /tmp/VC_redist.x64.exe -o/tmp/vcredist >/dev/null
@@ -148,6 +160,7 @@ stage_deps() {
         > app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt
     fi
     ls app/Madeira/x86_64-vcruntime
+    toc "deps:vcredist"
     if [ -f app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt ]; then
       echo "VCRUNTIME_STATUS=PLACEHOLDER"
     else
@@ -196,10 +209,10 @@ stage_toolchains() {
 stage_native() {
   step "浅克隆子模块（app-only 仅需 FEX；完整模式全量并跳过三个测试数据仓）"
   if [ "$APP_ONLY" = 1 ]; then
-    git submodule update --init --depth 1 -- FEX
+    tic; git submodule update --init --depth 1 -- FEX; toc "native:fex-clone"
   else
     # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
-    git submodule update --init --depth 1 -- FEX wine dxmt madeira-dock
+    tic; git submodule update --init --depth 1 -- FEX wine dxmt madeira-dock; toc "native:submodule-clone"
   fi
   # FEX 嵌套子模块: BUILD_TESTING=OFF，三个 *-tests-bins 数据仓（数百 MB）
   # 不参与构建，跳过；其余（fmt/range-v3/rpmalloc/jemalloc/vixl 等）保留。
@@ -260,6 +273,8 @@ PYEOF
     # ConfigValues.inl 等生成头（约 1 分钟），其余原生库由 stage_app 空桩。
     step "[app-only] FEX configure-only（生成头文件，不编译）"
     FEX_CONFIGURE_ONLY=1 bash build/fex-ios/build.sh
+    cmake --build "FEX/build-ios" --target CONFIG_INC
+    toc "native:fex-configure+headers"
     echo "[app-only] wine/dxmt 静态库由 stage_app 统一空桩"
     return 0
   fi
@@ -381,12 +396,14 @@ stage_app() {
   DD="${RUNNER_TEMP:-$R/ci-DD}/Madeira-DD"
   step "xcodebuild 编译冒烟 (Debug, 未签名, DerivedData=$DD)"
   rc=0
+  tic
   xcodebuild -project app/Madeira.xcodeproj -scheme Madeira \
     -configuration Debug -destination 'generic/platform=iOS' \
     -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     COMPILER_INDEX_STORE_ENABLE=NO \
     build > "$LOGDIR/xcodebuild.log" 2>&1 || rc=$?
+  toc "app:xcodebuild"
   if [ "$rc" -ne 0 ]; then
     if [ "$APP_ONLY" = 1 ] && grep -qE "Undefined symbol[s]?|ld: symbol|error: linker command" "$LOGDIR/xcodebuild.log"; then
       echo "======== COMPILE-ONLY PASS ========"
