@@ -28,7 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          # 子模块改为在 build-all.sh 里按需浅克隆（actions/checkout 的
+          # 递归子模块是全量克隆，wine/FEX 的历史 + FEX 测试数据仓会把
+          # macOS runner 本就紧张的磁盘吃光 —— 见 run #8 的 No space left）。
+          submodules: false
           fetch-depth: 1
 
       - name: Guard — 只允许 port/ios15.6

@@ -34,6 +34,19 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 export PATH="$brew_prefix/opt/bison/bin:$brew_prefix/opt/flex/bin:$brew_prefix/bin:$PATH"
 
 stage_deps() {
+  step "runner 磁盘瘦身（macOS runner 磁盘是最稀缺资源）"
+  default_xcode="$(xcode-select -p)"
+  for d in /Applications/Xcode*.app; do
+    [ -d "$d" ] || continue
+    if [ "$(cd "$d" && pwd -P)" != "$(cd "$default_xcode" && pwd -P)" ]; then
+      echo "  删除非默认 Xcode: $d"
+      sudo rm -rf "$d"
+    fi
+  done
+  sudo rm -rf /Users/runner/Library/Android/sdk /usr/local/lib/android \
+    /usr/local/.ghcup /opt/hostedtoolcache/CodeQL 2>/dev/null || true
+  echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+
   step "brew 工具 (bison / flex / sevenzip)"
   brew install bison flex sevenzip
 
@@ -99,6 +112,15 @@ stage_toolchains() {
 }
 
 stage_native() {
+  step "浅克隆子模块（跳过 FEX 的三个测试数据仓）"
+  # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
+  git submodule update --init --depth 1 -- FEX wine dxmt madeira-dock
+  # FEX 嵌套子模块: BUILD_TESTING=OFF，三个 *-tests-bins 数据仓（数百 MB）
+  # 不参与构建，跳过；其余（fmt/range-v3/rpmalloc/jemalloc/vixl 等）保留。
+  git -C FEX submodule update --init --depth 1 \
+    $(git -C FEX config -f .gitmodules --name-only | grep -v 'tests-bins' | tr '\n' ' ')
+  echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+
   step "Python 依赖（FEX 的 CPU 检测脚本需要 packaging）"
   # runner 的 Homebrew Python 受 PEP 668 保护；FEX 配置期会调用
   # Scripts/aarch64_fit_native.py（import packaging）。dev 机有此模块，
