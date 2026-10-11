@@ -62,7 +62,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            toolchains
+            toolchains/gnutls-ios
+            toolchains/ffmpeg-ios
             build/freetype-ios/build
             app/Madeira/libavformat.a
             app/Madeira/libavcodec.a
@@ -107,6 +108,7 @@ jobs:
           key: llvm-mingw-20260421-${{ runner.arch }}
 
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
+        id: deps
         run: tools/ci/build-all.sh deps
 
       - name: Save downloaded llvm-mingw before native build
@@ -124,7 +126,8 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            toolchains
+            toolchains/gnutls-ios
+            toolchains/ffmpeg-ios
             build/freetype-ios/build
             app/Madeira/libavformat.a
             app/Madeira/libavcodec.a
@@ -133,6 +136,7 @@ jobs:
           key: ${{ steps.toolchains-cache.outputs.cache-primary-key }}
 
       - name: native（FEXCore）
+        id: native
         run: tools/ci/build-all.sh native
 
       - name: Save FEX compilation cache before Wine
@@ -143,16 +147,53 @@ jobs:
           key: ${{ steps.ccache.outputs.cache-primary-key }}
 
       - name: wine（configure + unix 侧静态库）
+        id: wine
         run: tools/ci/build-all.sh wine
 
+      - name: Cache pairing dependencies
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.deps.outcome == 'success' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: build/rppairing-ios
+          shared-key: pairing-macos26-intel-ios15.6
+          save-if: ${{ !cancelled() }}
+
       - name: Pairing library（真实 iOS 静态库）
-        if: env.APP_ONLY != '1'
+        id: pairing
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.deps.outcome == 'success' }}
         run: |
           rustup target add aarch64-apple-ios
           bash build/rppairing-ios/build.sh > >(tee ci-logs/rppairing.log) 2>&1
 
+      - name: Restore iOS LLVM
+        id: llvm-cache
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.deps.outcome == 'success' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            toolchains/llvm-project
+            toolchains/llvm-host-build
+            toolchains/llvm-ios-build
+          key: llvm15-macos26-${{ runner.arch }}-ios15.6-${{ hashFiles('build/llvm-ios/build.sh') }}
+
+      - name: LLVM for DXMT（host tablegen + iOS shader libraries）
+        id: llvm
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.deps.outcome == 'success' }}
+        run: bash build/llvm-ios/build.sh > >(tee ci-logs/llvm-ios.log) 2>&1
+
+      - name: Save completed iOS LLVM before DXMT
+        if: ${{ !cancelled() && steps.llvm.outcome == 'success' && steps.llvm-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            toolchains/llvm-project
+            toolchains/llvm-host-build
+            toolchains/llvm-ios-build
+          key: ${{ steps.llvm-cache.outputs.cache-primary-key }}
+
       - name: DXMT（真实图形静态库）
-        if: env.APP_ONLY != '1'
+        id: dxmt
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
         run: bash build/dxmt-ios/build.sh > >(tee ci-logs/dxmt.log) 2>&1
 
       - name: app（xcodebuild 编译冒烟）
@@ -250,6 +291,14 @@ jobs:
           prerelease: true
           draft: false
           files: ipa/Madeira-port-nightly-unsigned.ipa
+
+      - name: Collect native compiler diagnostics
+        if: always()
+        run: |
+          while IFS= read -r diagnostic; do
+            mkdir -p "ci-logs/native-diagnostics/$(dirname "$diagnostic")"
+            cp "$diagnostic" "ci-logs/native-diagnostics/$diagnostic"
+          done < <(find build wine -type f \( -name '*.err' -o -name 'err-*.txt' -o -name 'config.log' \) 2>/dev/null)
 
       - name: upload logs
         if: always()

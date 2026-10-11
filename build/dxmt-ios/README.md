@@ -36,6 +36,11 @@ Both are gitignored — rebuild via the steps below.
    Two-stage build — first llvm-tblgen for macOS host, then iOS target libs
    reusing it. Flags used (summary):
    - Host stage: vanilla Release build of `llvm-tblgen`.
+   - Reproducible preparation: `bash build/llvm-ios/build.sh` from the repository
+     root, pinned to `8dfdcc7b7bf66834a761bd8de445840ef68e4d1a`. It builds
+     BitWriter, Passes, Linker and their dependencies, using
+     `IPHONEOS_DEPLOYMENT_TARGET` for the iOS libraries. CI caches the completed
+     build separately; the initial build requires compiling LLVM from source.
    - iOS stage: `CMAKE_SYSTEM_NAME=iOS`, `CMAKE_OSX_SYSROOT=iphoneos`,
      `LLVM_TABLEGEN=<host tblgen>`, `LLVM_BUILD_UTILS=Off`, no targets.
      Needs a one-line edit to `llvm/cmake/modules/AddLLVM.cmake` changing
@@ -83,12 +88,8 @@ cp build-pe/src/d3d11/d3d11.dll \
 ### Unix side (libdxmt_combined.a)
 
 ```
-./build.sh                    # builds libdxmt_unix.a (patched DXMT unix objs + airconv)
-
-# Combine DXMT objs + LLVM iOS static libs into one archive Xcode links.
-xcrun -sdk iphoneos libtool -static -o libdxmt_combined.a \
-    obj/*.o ../../toolchains/llvm-ios-build/lib/*.a
-cp libdxmt_combined.a ../../app/Madeira/
+./build.sh                    # generates shader headers, builds and combines DXMT + LLVM
+# Also stages libdxmt_combined.a into app/Madeira/ on a clean build.
 ```
 
 ## What the fork changes vs upstream

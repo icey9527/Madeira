@@ -10,8 +10,7 @@
 # CI 与本地开发流程的差异（此处引导，待日后回馈仓库）:
 #  1. app/Madeira/libwineserver.a 基础库不在仓库 —— CI 首次用 wine/server/*.c
 #     全量编译引导，再由 build/wineserver/build.sh 替换其中的补丁对象。
-#  2. app/Madeira/libdxmt_combined.a 的真实构建需要自建 iOS 版 LLVM（数小时）
-#     —— CI 先放空库占位，先验证 App 层的编译与链接；Phase 4 再补真实构建。
+#  2. DXMT 所需的 iOS LLVM 由独立阶段构建并缓存，完整模式不使用占位库。
 #  3. llvm-mingw 工具链按 docs/BUILDING.md 的版本与 SHA256 固定下载。
 set -euo pipefail
 
@@ -130,6 +129,11 @@ stage_deps() {
     tar -xJf "/tmp/$LLVM_MINGW_NAME.tar.xz" -C toolchains/
   fi
 
+  if [ "$APP_ONLY" != 1 ] && [ ! -x "toolchains/$LLVM_MINGW_NAME/bin/llvm-objcopy" ] \
+      && [ ! -x "$brew_prefix/opt/llvm/bin/llvm-objcopy" ]; then
+    brew install llvm
+  fi
+
   step "VC++ 运行时 DLL (app/Madeira/x86_64-vcruntime)"
   if [ "$APP_ONLY" = 1 ]; then
     mkdir -p app/Madeira/x86_64-vcruntime
@@ -200,6 +204,10 @@ stage_toolchains() {
     bash build/gnutls-ios/build.sh
     toc "toolchains:gnutls-stack"
   fi
+  for library in gnutls hogweed nettle gmp; do
+    [ -s "toolchains/gnutls-ios/lib/lib$library.a" ] || die "GnuTLS 缓存不完整: lib$library.a"
+    cp "toolchains/gnutls-ios/lib/lib$library.a" app/Madeira/
+  done
 
   step "FFmpeg, LGPL 极简配置 (build/ffmpeg)"
   if [ -f app/Madeira/libavcodec.a ] && [ -d toolchains/ffmpeg-ios/include ]; then
@@ -331,12 +339,13 @@ stage_wine() {
     mkdir -p wine/build-macos
     (cd wine/build-macos && wine_host_command ../configure --enable-win64 --disable-tests --without-x)
   fi
-  wine_host_command make -C wine/build-macos -j "$NPROC" include/wtypes.h include/mfobjects.h include/mftransform.h
+  wine_host_command make -C wine/build-macos -j "$NPROC" include/all
   hdrs_m="$(find wine/build-macos/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-macos 生成头文件数: $hdrs_m"
   [ -f wine/build-macos/include/config.h ] || { echo "::error::build-macos/include/config.h 缺失"; exit 1; }
-  find wine/build-macos/include -name 'mfobjects.h' -o -name 'mftransform.h' 2>/dev/null \
-    | head -2 | grep . || echo "  [warn] ntapi 的 widl 头（mfobjects/mftransform）未找到——ntdll-unix 编译会再暴露"
+  for header in wtypes mfobjects mftransform objidlbase objidl; do
+    [ -s "wine/build-macos/include/$header.h" ] || die "Wine Mac 生成头缺失: $header.h"
+  done
 
   step "wine configure: build-arm64ec (dwrite 的 widl 头文件)"
   if [ ! -f wine/build-arm64ec/config.status ]; then
@@ -344,19 +353,17 @@ stage_wine() {
     (cd wine/build-arm64ec && \
       wine_host_command ../configure --enable-archs=arm64ec --without-x --disable-tests --enable-winegstreamer)
   fi
-  wine_host_command make -C wine/build-arm64ec -j "$NPROC" include/dwrite.h include/dwrite_3.h
+  wine_host_command make -C wine/build-arm64ec -j "$NPROC" include/all
   hdrs_x="$(find wine/build-arm64ec/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-arm64ec 生成头文件数: $hdrs_x"
-  [ -f wine/build-arm64ec/include/dwrite.h ] \
-    || echo "  [warn] build-arm64ec/include/dwrite.h 未生成——dwrite_unixlib 编译会再暴露"
+  for header in dwrite dwrite_3 objidlbase objidl; do
+    [ -s "wine/build-arm64ec/include/$header.h" ] || die "Wine ARM64EC 生成头缺失: $header.h"
+  done
 
   step "libntdll_unix.a (build/ntdll-unix)"
   bash build/ntdll-unix/build.sh
 
   step "libwineserver.a (build/wineserver, 含 CI 引导)"
-  if [ ! -f app/Madeira/libwineserver.a ]; then
-    bootstrap_wineserver_base
-  fi
   bash build/wineserver/build.sh all
 
   step "libwin32u_unix.a (build/win32u-unix)"
@@ -403,6 +410,7 @@ stub_all_native_libs() {
 }
 
 stage_app() {
+  bash build/stage-licenses.sh
   step "磁盘保护线（app 构建前必须 >= 30 GiB 可用）"
   free_kb="$(df -Pk / | awk 'NR==2{print $4}')"
   echo "  可用: $(( ${free_kb:-0} / 1024 / 1024 )) GiB"
@@ -465,6 +473,12 @@ stage_app() {
   metalfx_load="$(otool -l "$APP_BUILT/Madeira" | awk '/^[[:space:]]*cmd LC_/ { command = $2 } /name .*MetalFX.framework/ { print command }')"
   [ "$metalfx_load" = LC_LOAD_WEAK_DYLIB ] || die "MetalFX 必须弱链接，实际为 ${metalfx_load:-MISSING}"
   echo "  MetalFX: $metalfx_load"
+  otool -L "$APP_BUILT/Madeira" > "$LOGDIR/startup-dependencies.txt"
+  otool -l "$APP_BUILT/Madeira" > "$LOGDIR/startup-load-commands.txt"
+  nm -m -u "$APP_BUILT/Madeira" > "$LOGDIR/startup-imports.txt"
+  if grep -q libmetalirconverter "$LOGDIR/startup-dependencies.txt"; then
+    die "Metal Shader Converter 只能按需 dlopen，不能作为 15.6 主程序的启动依赖"
+  fi
 }
 
 # ---------- main ----------

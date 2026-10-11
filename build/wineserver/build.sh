@@ -16,9 +16,6 @@ mkdir -p "$OBJ_DIR"
 if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
     if [ -f "$APP_LIB" ]; then
         cp "$APP_LIB" "$OBJ_DIR/libwineserver.a"
-    else
-        echo "ERROR: No base libwineserver.a found"
-        exit 1
     fi
 fi
 
@@ -113,6 +110,30 @@ PATCHED_FILES=(
     "hidparse_ios:$REPO_ROOT/build/hidpad/hidparse_ios.c:hidparse_ios.o"
 )
 
+BUILD_FAILURES=0
+if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
+    [ "${1:-all}" = all ] || { echo "A clean wineserver build requires 'all'"; exit 1; }
+    echo "=== Building wineserver base from source ==="
+    BASE_OBJECTS=()
+    for source in "$WINE_SRC/server/"*.c; do
+        base_name="$(basename "$source" .c)"
+        replaced=0
+        for entry in "${PATCHED_FILES[@]}"; do
+            if [ "${entry##*:}" = "$base_name.o" ]; then replaced=1; break; fi
+        done
+        [ "$replaced" = 0 ] || continue
+        if compile_one "$source" "$base_name"; then
+            BASE_OBJECTS+=("$OBJ_DIR/$base_name.o")
+        else
+            BUILD_FAILURES=$((BUILD_FAILURES + 1))
+        fi
+    done
+    [ "${#BASE_OBJECTS[@]}" -gt 0 ] || { echo "No wineserver base sources found"; exit 1; }
+    if [ "$BUILD_FAILURES" = 0 ]; then
+        ar rcs "$OBJ_DIR/libwineserver.a" "${BASE_OBJECTS[@]}"
+    fi
+fi
+
 echo "=== Building kill wrapper (without kill macro) ==="
 echo -n "  wineserver_ios_kill... "
 # Compile WITHOUT -include wineserver_ios_kill.h to avoid recursive macro
@@ -131,9 +152,9 @@ case "${1:-all}" in
             IFS=: read -r name src old_obj <<< "$entry"
             # Support absolute paths (e.g. upstream files via $WINE_SRC)
             if [[ "$src" == /* ]]; then
-                compile_one "$src" "$name"
+                compile_one "$src" "$name" || BUILD_FAILURES=$((BUILD_FAILURES + 1))
             else
-                compile_one "$BUILD_DIR/$src" "$name"
+                compile_one "$BUILD_DIR/$src" "$name" || BUILD_FAILURES=$((BUILD_FAILURES + 1))
             fi
         done
         ;;
@@ -150,6 +171,8 @@ case "${1:-all}" in
         exit 1
         ;;
 esac
+
+[ "$BUILD_FAILURES" = 0 ] || { echo "Wineserver: $BUILD_FAILURES compilation failures"; exit 1; }
 
 echo ""
 echo "=== Updating libwineserver.a ==="
@@ -206,8 +229,11 @@ echo "=== Renaming colliding symbols in every .o (objcopy sweep) ==="
 # we know collide with win32u-unix, repackage. Affects definitions AND
 # references uniformly, so cross-file calls inside wineserver still
 # resolve. Externals (win32u, etc.) only see the ws_-prefixed names.
-OBJCOPY=$(command -v llvm-objcopy || echo /opt/homebrew/opt/llvm/bin/llvm-objcopy)
-[ -x "$OBJCOPY" ] || OBJCOPY=/opt/homebrew/Cellar/llvm/22.1.0/bin/llvm-objcopy
+OBJCOPY="${LLVM_OBJCOPY:-$(command -v llvm-objcopy || true)}"
+if [ ! -x "$OBJCOPY" ]; then
+    OBJCOPY="$(brew --prefix llvm)/bin/llvm-objcopy"
+fi
+[ -x "$OBJCOPY" ] || { echo "llvm-objcopy is required for wineserver symbol renaming"; exit 1; }
 COLLISIONS=(
     alloc_user_handle free_user_handle get_virtual_screen_rect
     destroy_thread_windows get_window_thread is_desktop_class

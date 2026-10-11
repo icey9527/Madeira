@@ -17,6 +17,17 @@ OUT_LIB="$BUILD_DIR/libdxmt_unix.a"
 
 mkdir -p "$OBJ_DIR"
 
+[ -s "$LLVM_BUILD/lib/libLLVMPasses.a" ] || { echo "Build iOS LLVM first: bash build/llvm-ios/build.sh"; exit 1; }
+[ -s "$LLVM_BUILD/include/llvm/Config/llvm-config.h" ] || { echo "LLVM generated headers missing"; exit 1; }
+
+mkdir -p "$BUILD_DIR/shader-headers"
+for shader in air_msad air_samplepos air_tessellation; do
+    xcrun -sdk macosx metal -std=metal3.1 --target=air64-apple-macos14.0 \
+        -c "$DXMT_SRC/airconv/shaders/$shader.metal" \
+        -o "$BUILD_DIR/shader-headers/$shader.air"
+    xxd -n "$shader" -i "$BUILD_DIR/shader-headers/$shader.air" "$BUILD_DIR/shader-headers/$shader.h"
+done
+
 COMMON_FLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=${IPHONEOS_DEPLOYMENT_TARGET:-18.0} -fblocks -O2"
 INCLUDES="-I$DXMT_ROOT/include -I$DXMT_ROOT/libs -I$DXMT_SRC/winemetal -I$DXMT_SRC/airconv"
 INCLUDES_DIRECTX="-I$DXMT_ROOT/include/native/directx -I$DXMT_ROOT/include/native/windows"
@@ -319,13 +330,8 @@ echo "Built: $OUT_LIB ($(wc -c < "$OUT_LIB" | tr -d ' ') bytes)"
 # here reaches nothing: the app would keep linking the previous objects and the
 # build would look clean. Replace our members in place and re-index.
 COMBINED="$BUILD_DIR/libdxmt_combined.a"
-if [ -f "$COMBINED" ]; then
-    echo "=== Refreshing libdxmt_combined.a ==="
-    xcrun -sdk iphoneos ar r "$COMBINED" "$OBJ_DIR"/*.o
-    xcrun -sdk iphoneos ranlib "$COMBINED"
-    echo "Refreshed: $COMBINED ($(wc -c < "$COMBINED" | tr -d ' ') bytes)"
-    APP_COPY="$REPO_ROOT/app/Madeira/libdxmt_combined.a"
-    if [ -f "$APP_COPY" ]; then cp "$COMBINED" "$APP_COPY"; echo "Staged: $APP_COPY"; fi
-else
-    echo "NOTE: $COMBINED absent; the app links that file, so build it before deploying."
-fi
+echo "=== Combining DXMT and iOS LLVM archives ==="
+xcrun -sdk iphoneos libtool -static -o "$COMBINED" "$OUT_LIB" "$LLVM_BUILD/lib/"*.a
+APP_COPY="$REPO_ROOT/app/Madeira/libdxmt_combined.a"
+cp "$COMBINED" "$APP_COPY"
+echo "Staged: $APP_COPY ($(wc -c < "$APP_COPY" | tr -d ' ') bytes)"
