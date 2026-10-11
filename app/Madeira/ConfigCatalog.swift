@@ -69,7 +69,7 @@ struct AllSettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        AppNavigationView {
             List {
                 Section {
                     Text("Every other option Madeira reads from madeira.cfg. JIT pool, video memory, the swap tier, the sync engine and eco mode are in Settings › Memory & sync. Most options are read when Madeira starts, so close it from the app switcher after a change. Default leaves the option out of the file. Swipe left on a row to reset it.")

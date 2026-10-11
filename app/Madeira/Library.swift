@@ -2726,7 +2726,7 @@ struct LibraryView: View {
             }
         }
         .sheet(isPresented: $browser) {
-            NavigationStack { ExecutableBrowser(folder: LibraryModel.drive) { entry in
+            AppNavigationView { ExecutableBrowser(folder: LibraryModel.drive) { entry in
                 model.save(entry); browser = false; selected = entry
             } }
         }
@@ -2902,7 +2902,7 @@ struct LibraryDetail: View {
         }
     }
     var body: some View {
-        NavigationStack {
+        AppNavigationView {
             Form {
                 Section {
                     HStack(spacing: 20) {
@@ -3200,7 +3200,7 @@ struct SteamSearchView: View {
     @State private var loading = false
     @State private var submitted = ""
     var body: some View {
-        NavigationStack {
+        AppNavigationView {
             List {
                 if loading { ProgressView("Searching Steam…") }
                 if let error { Text(error).foregroundStyle(.secondary) }
@@ -4392,5 +4392,17 @@ struct EmptyStateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+}
+
+/// iOS 15.6 兼容：NavigationStack（iOS 16+）→ NavigationView。
+/// .stack 样式强制单栏——上游注释明言 NavigationStack 在所有设备单列，
+/// 而 NavigationView 在 iPad 上默认双栏分栏，这里显式对齐原行为。
+struct AppNavigationView<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        NavigationView { content() }
+            .navigationViewStyle(.stack)
     }
 }

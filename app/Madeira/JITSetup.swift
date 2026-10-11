@@ -594,7 +594,7 @@ struct JITSetupView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        AppNavigationView {
             Form {
                 Section {
                     Picker("Method", selection: $coordinator.method) {

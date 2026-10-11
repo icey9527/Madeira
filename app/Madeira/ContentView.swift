@@ -1273,7 +1273,7 @@ struct ContentView: View {
          * NavigationStack is single-column on every device. Safe here: there are
          * no NavigationLinks anywhere in the app, so nothing depended on the
          * two-column selection behaviour. */
-        NavigationStack {
+        AppNavigationView {
             Group {
                 if library.enabled && library.current != nil {
                     sessionBody
@@ -3545,7 +3545,7 @@ struct SetupGuideView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {   /* ml658: see the note on the main body */
+        AppNavigationView {   /* ml658: see the note on the main body */
             List {
                 Section("Requirements") {
                     guideRow(
@@ -4118,10 +4118,10 @@ struct GlassShape: View {
     var capsule = false
     var cornerRadius: CGFloat = 18
     var tint: Color? = nil
-    fileprivate var shape: AnyShape {
-        if circle { return AnyShape(Circle()) }
-        if capsule { return AnyShape(Capsule()) }
-        return AnyShape(RoundedRectangle(cornerRadius: cornerRadius))
+    fileprivate var shape: AnyShape15 {
+        if circle { return AnyShape15(Circle()) }
+        if capsule { return AnyShape15(Capsule()) }
+        return AnyShape15(RoundedRectangle(cornerRadius: cornerRadius))
     }
     var body: some View {
         Color.clear.glassFace(self)
@@ -4180,11 +4180,11 @@ struct TouchControlButton: View {
 
     /// The resting outline and the edit-mode selection ring, in the shape the
     /// control actually has.
-    private var outline: AnyShape {
+    private var outline: AnyShape15 {
         switch control.action.padFace {
-        case .some(.wide):    return AnyShape(RoundedRectangle(cornerRadius: size.height * 0.30))
-        case .some(.capsule): return AnyShape(Capsule())
-        default:              return AnyShape(Circle())
+        case .some(.wide):    return AnyShape15(RoundedRectangle(cornerRadius: size.height * 0.30))
+        case .some(.capsule): return AnyShape15(Capsule())
+        default:              return AnyShape15(Circle())
         }
     }
 
@@ -4617,4 +4617,17 @@ struct MappingPanel: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+// MARK: - iOS 15 兼容（Phase 2）
+
+/// iOS 15.6 兼容：AnyShape（iOS 16+）的等价物——装箱任意 Shape 并转发 path。
+private struct AnyShape15: Shape {
+    private let pathBuilder: (CGRect) -> Path
+
+    init<S: Shape>(_ shape: S) {
+        pathBuilder = { rect in shape.path(in: rect) }
+    }
+
+    func path(in rect: CGRect) -> Path { pathBuilder(rect) }
 }

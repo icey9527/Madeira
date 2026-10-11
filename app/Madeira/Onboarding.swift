@@ -211,7 +211,7 @@ struct OnboardingView: View {
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone" }
 
     var body: some View {
-        NavigationStack {
+        AppNavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let position = OnboardingRules.position(of: model.step, in: model.steps), position.count > 1 {

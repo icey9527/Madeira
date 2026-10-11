@@ -133,7 +133,7 @@ struct MadeiraDockView: View {
     let start: (DockGame, Bool) -> Void
 
     var body: some View {
-        NavigationStack {
+        AppNavigationView {
             Form {
                 Section {
                     Text("Madeira Dock starts an installed Steam game through Valve's own Steam client, without the Steam desktop window. Valve's client signs in with your account and decides whether the game may run.")

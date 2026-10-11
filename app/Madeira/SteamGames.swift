@@ -867,7 +867,7 @@ struct SteamGameSheet: View {
     var body: some View {
         let owned = SteamOwnedLibrary.enabled ? steam.owned : []
         let item = SteamGamesRules.items(installed: games.games, owned: owned, search: "").first { $0.id == appID }
-        NavigationStack {
+        AppNavigationView {
             Form {
                 if let item {
                     Section {
