@@ -11,6 +11,12 @@ APP_LIB="$REPO_ROOT/app/Madeira/libntdll_unix.a"
 
 mkdir -p "$OBJ_DIR"
 
+PAGE_WAIT_FLAG=""
+if printf '#include <sys/resource.h>\nvoid check(struct rusage_info_v6 *usage) { (void)usage->ri_page_wait_time_mach; }\n' \
+    | xcrun -sdk iphoneos clang -arch arm64 -isysroot "$SDK" -x c -fsyntax-only - 2>/dev/null; then
+    PAGE_WAIT_FLAG="-DMADEIRA_HAS_PAGE_WAIT_TIME_MACH=1"
+fi
+
 SUCCEEDED=0
 FAILED=0
 FAILED_FILES=""
@@ -29,7 +35,7 @@ compile_one() {
         -I"$BUILD_DIR/shims" -I"$BUILD_DIR/../madsync" -DHAVE_LINUX_NTSYNC_H=1 \
         -I"$WINE_BUILD/dlls/ntdll" -I"$WINE_SRC/dlls/ntdll" -I"$WINE_SRC/dlls/ntdll/unix" \
         -I"$WINE_BUILD/include" -I"$WINE_SRC/include" \
-        -D__WINESRC__ -DLTC_NO_PROTOTYPES -DLTC_SOURCE -D_NTSYSTEM_ \
+        $PAGE_WAIT_FLAG -D__WINESRC__ -DLTC_NO_PROTOTYPES -DLTC_SOURCE -D_NTSYSTEM_ \
         -D_ACRTIMP= -DWINBASEAPI= \
         -DBINDIR=\"/usr/local/bin\" -DLIBDIR=\"/usr/local/lib\" \
         -DDATADIR=\"/usr/local/share\" -DSYSTEMDLLPATH=\"\" \

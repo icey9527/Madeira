@@ -331,7 +331,7 @@ stage_wine() {
     mkdir -p wine/build-macos
     (cd wine/build-macos && wine_host_command ../configure --enable-win64 --disable-tests --without-x)
   fi
-  wine_host_command make -C wine/build-macos -j "$NPROC" include
+  wine_host_command make -C wine/build-macos -j "$NPROC" include/wtypes.h include/mfobjects.h include/mftransform.h
   hdrs_m="$(find wine/build-macos/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-macos 生成头文件数: $hdrs_m"
   [ -f wine/build-macos/include/config.h ] || { echo "::error::build-macos/include/config.h 缺失"; exit 1; }
@@ -344,7 +344,7 @@ stage_wine() {
     (cd wine/build-arm64ec && \
       wine_host_command ../configure --enable-archs=arm64ec --without-x --disable-tests --enable-winegstreamer)
   fi
-  wine_host_command make -C wine/build-arm64ec -j "$NPROC" include
+  wine_host_command make -C wine/build-arm64ec -j "$NPROC" include/dwrite.h include/dwrite_3.h
   hdrs_x="$(find wine/build-arm64ec/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-arm64ec 生成头文件数: $hdrs_x"
   [ -f wine/build-arm64ec/include/dwrite.h ] \
