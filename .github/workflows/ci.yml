@@ -78,6 +78,7 @@ jobs:
           restore-keys: ccache-macos26-v1-
 
       - name: Cache VC++ 运行时 DLL（12 个，内容静态，静态 key）
+        if: env.APP_ONLY != '1'
         uses: actions/cache@v4
         with:
           path: app/Madeira/x86_64-vcruntime

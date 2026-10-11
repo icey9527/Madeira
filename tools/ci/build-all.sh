@@ -98,7 +98,7 @@ stage_deps() {
 
   step "构建环境版本记录（image 漂移时用于区分环境问题/代码问题）"
   sw_vers
-  echo "xcodebuild: $(xcodebuild -version | head -1)"
+  xcodebuild -version
   echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null)"
   echo "clang: $(clang --version | head -1)"
   echo "cmake: $(cmake --version | head -1)"
@@ -110,9 +110,7 @@ stage_deps() {
 
   step "brew 工具 (bison / flex / sevenzip / ccache)"
   if [ "$APP_ONLY" = 1 ]; then
-    if [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
-      tic; brew install --quiet sevenzip; toc "deps:brew-install(sevenzip)"
-    fi
+    echo "  [app-only] 跳过（VC++ 运行时资源不参与源码编译）"
   else
     tic; brew install bison flex sevenzip ccache; toc "deps:brew-install"
   fi
@@ -129,7 +127,11 @@ stage_deps() {
   fi
 
   step "VC++ 运行时 DLL (app/Madeira/x86_64-vcruntime)"
-  if [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
+  if [ "$APP_ONLY" = 1 ]; then
+    mkdir -p app/Madeira/x86_64-vcruntime
+    printf 'Compile-only resource placeholder; not a runnable App.\n' > app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt
+    echo "VCRUNTIME_STATUS=COMPILE_ONLY_PLACEHOLDER"
+  elif [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
     tic
     curl -fL --retry 3 -o /tmp/VC_redist.x64.exe "https://aka.ms/vs/17/release/vc_redist.x64.exe"
     rm -rf /tmp/vcredist && mkdir -p /tmp/vcredist
@@ -411,8 +413,11 @@ stage_app() {
     -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     COMPILER_INDEX_STORE_ENABLE=NO \
+    OTHER_SWIFT_FLAGS='$(inherited) -Xfrontend -warn-long-expression-type-checking=500 -Xfrontend -warn-long-function-bodies=1000' \
+    -showBuildTimingSummary \
     build > "$LOGDIR/xcodebuild.log" 2>&1 || rc=$?
   toc "app:xcodebuild"
+  grep -E 'took [0-9]+ms to type-check|Build Timing Summary' "$LOGDIR/xcodebuild.log" > "$LOGDIR/compile-timing.log" || true
   if [ "$rc" -ne 0 ]; then
     if [ "$APP_ONLY" = 1 ] \
         && grep -qE 'Undefined symbols?(:| for architecture)' "$LOGDIR/xcodebuild.log" \

@@ -1275,11 +1275,7 @@ enum LibraryRendererBadge {
 /// the search field below.
 struct LibraryLargeTitle: ToolbarContent {
     var body: some ToolbarContent {
-        if #available(iOS 26.0, *) {
-            ToolbarItem(placement: .topBarLeading) { LibraryTitleText() }.sharedBackgroundVisibility(.hidden)
-        } else {
-            ToolbarItem(placement: .navigationBarLeading) { LibraryTitleText() }
-        }
+        ToolbarItem(placement: .navigationBarLeading) { LibraryTitleText() }
     }
 }
 
@@ -1490,7 +1486,14 @@ struct LibraryNavSearch: UIViewControllerRepresentable {
             let layer = bar.layer
             let now = layer.convertTime(CACurrentMediaTime(), from: nil)
             let squeezed = 0.985, inTime = 0.12
-            let back = CASpringAnimation(perceptualDuration: 0.5, bounce: 0.5)
+            let back: CASpringAnimation
+            if #available(iOS 17.0, *) {
+                back = CASpringAnimation(perceptualDuration: 0.5, bounce: 0.5)
+            } else {
+                back = CASpringAnimation(keyPath: "transform.scale")
+                back.damping = 10
+                back.stiffness = 180
+            }
             back.keyPath = "transform.scale"
             back.fromValue = squeezed
             back.toValue = 1
@@ -1535,7 +1538,9 @@ struct LibraryNavSearch: UIViewControllerRepresentable {
             owner = target
             let item = target.navigationItem
             if item.searchController !== c.controller { item.searchController = c.controller }
-            if item.preferredSearchBarPlacement != .stacked { item.preferredSearchBarPlacement = .stacked }
+            if #available(iOS 16.0, *), item.preferredSearchBarPlacement != .stacked {
+                item.preferredSearchBarPlacement = .stacked
+            }
             if item.hidesSearchBarWhenScrolling { item.hidesSearchBarWhenScrolling = false }
             // iOS 26 otherwise moves it to the bottom of an iPhone screen, beside the tab bar.
             if #available(iOS 26.0, *), item.searchBarPlacementAllowsToolbarIntegration {
@@ -1812,7 +1817,7 @@ struct AmbientGlow: View {
             // In the dark the light adds to the page (plusLighter): a very bright artwork's
             // light is brought down at the top (AmbientGlow.metal) so it does not glare.
             // ml1219: off on a light page, where a knee of 0 left every pixel as it was.
-            .colorEffect(ShaderLibrary.ambientKnee(.float(0.3)), isEnabled: dark)
+            .ambientKnee15(dark: dark)
             .mask { AmbientMovie.mask(f.light) }
             .mask {
                 let turn = reduceMotion ? 0 : 1.2 * sin(t * 0.12 + Double(seed % 97))
@@ -1962,6 +1967,17 @@ struct LiquidMetalFill: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        if #available(iOS 17.0, *) {
+            shaderBody
+        } else {
+            LinearGradient(colors: [.white.opacity(0.7), .gray, .black.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @available(iOS 17.0, *)
+    private var shaderBody: some View {
         GeometryReader { geometry in
             TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reduceMotion)) { context in
                 // Kept small, so the shader's float time stays precise.
@@ -2022,8 +2038,12 @@ struct LibraryBadges: View {
     /// A state pill after the format pills (a Steam game's "Update").
     var note: String? = nil
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) { format; size }
+        if #available(iOS 16.0, *) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) { format; size }
+                VStack(alignment: .leading, spacing: 4) { format; size }
+            }
+        } else {
             VStack(alignment: .leading, spacing: 4) { format; size }
         }
     }
@@ -2471,7 +2491,8 @@ struct LibraryView: View {
         .navigationTitle("")
         .toolbar {
             LibraryLargeTitle()
-            if tab == 0 { libraryToolbar } else { settingsToolbar }
+            libraryToolbar
+            settingsToolbar
         }
         // On the tab view, not inside one tab's page: an alert attached to the Library
         // page cannot present while Settings is showing, so an error raised there (its
@@ -2503,6 +2524,7 @@ struct LibraryView: View {
     }
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
+            if tab == 0 {
             Menu {
                 Picker("Library layout", selection: $layout) {
                     Label("Cards", systemImage: "square.grid.2x2").tag("cards")
@@ -2523,11 +2545,17 @@ struct LibraryView: View {
                     Label("Folder size", systemImage: "internaldrive").tag("size")
                 }
             } label: { Label("Library options", systemImage: "line.3.horizontal.decrease") }
+            }
         }
-        ToolbarItem(placement: .navigationBarTrailing) { Button { browser = true } label: { Label("Add executable", systemImage: "plus") } }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            if tab == 0 {
+            Button { browser = true } label: { Label("Add executable", systemImage: "plus") }
+            }
+        }
     }
     @ToolbarContentBuilder private var settingsToolbar: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
+            if tab == 1 {
             Button(action: enableJIT) {
                 HStack(spacing: 6) {
                     Text("Enable JIT")
@@ -2535,6 +2563,7 @@ struct LibraryView: View {
                 }
             }
             .disabled(jitState.enabled)
+            }
         }
     }
     private func switchTab(to newTab: Int) {
@@ -3025,8 +3054,8 @@ struct LibraryDetail: View {
                 // A Steam game starts with Steam's own launch option through Madeira Dock.
                 if entry.desktop != true && entry.steamAppID == nil {
                     Section {
-                        TextField("Launch arguments", text: $entry.arguments, axis: .vertical)
-                            .font(.body.monospaced()).lineLimit(1...4)
+                        TextField("Launch arguments", text: $entry.arguments)
+                            .font(.body.monospaced()).lineLimit(4)
                             .autocorrectionDisabled().textInputAutocapitalization(.never)
                         LaunchFlagChips(arguments: $entry.arguments)
                         // What the next start runs (ml1163: in the Wine desktop, a batch file or
@@ -3797,7 +3826,7 @@ struct LibraryFloatingItem: View {
         .task(id: touched) {
             guard isMenu else { return }
             faded = false
-            do { try await Task.sleep(for: .seconds(3)); withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.5)) { faded = true } } catch { }
+            do { try await Task.sleep(nanoseconds: 3_000_000_000); withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.5)) { faded = true } } catch { }
         }
     }
 }
@@ -4118,7 +4147,7 @@ struct LibraryLiveLogs: View {
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: max(0, geo.size.height - 16), alignment: .topLeading)
-            }.defaultScrollAnchor(.bottom).padding(8)
+            }.bottomScrollAnchor15().padding(8)
         }.background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10)).foregroundStyle(.white)
             .accessibilityLabel("Live diagnostic log")
     }
@@ -4424,7 +4453,7 @@ struct LabeledContent15<Content: View>: View {
     }
 
     init(_ titleKey: String, value: String) where Content == Text {
-        self.init(titleKey) { Text(value).foregroundStyle(.secondary) }
+        self.init(titleKey) { Text(value).foregroundColor(.secondary) }
     }
 
     var body: some View {
@@ -4448,6 +4477,22 @@ struct ActivityShareSheet: UIViewControllerRepresentable {
 }
 
 extension View {
+    @ViewBuilder func ambientKnee15(dark: Bool) -> some View {
+        if #available(iOS 17.0, *) {
+            self.colorEffect(ShaderLibrary.ambientKnee(.float(0.3)), isEnabled: dark)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder func bottomScrollAnchor15() -> some View {
+        if #available(iOS 17.0, *) {
+            self.defaultScrollAnchor(.bottom)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder func navigationMaterial15(visible: Bool) -> some View {
         if #available(iOS 16.0, *) {
             self.toolbarBackground(.regularMaterial, for: .navigationBar)
