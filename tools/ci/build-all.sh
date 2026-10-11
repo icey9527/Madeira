@@ -196,21 +196,27 @@ stage_toolchains() {
   if [ -f toolchains/gnutls-ios/lib/libgnutls.a ]; then
     echo "  [cache] 命中 toolchains 缓存，跳过"
   else
+    tic
     bash build/gnutls-ios/build.sh
+    toc "toolchains:gnutls-stack"
   fi
 
   step "FFmpeg, LGPL 极简配置 (build/ffmpeg)"
   if [ -f app/Madeira/libavcodec.a ] && [ -d toolchains/ffmpeg-ios/include ]; then
     echo "  [cache] 命中 toolchains 缓存，跳过"
   else
+    tic
     bash build/ffmpeg/build.sh
+    toc "toolchains:ffmpeg"
   fi
 
   step "freetype 静态库 (build/freetype-ios)"
   if [ -f build/freetype-ios/build/libfreetype.a ]; then
     echo "  [cache] 命中 toolchains 缓存，跳过"
   else
+    tic
     bash build/freetype-ios/build.sh
+    toc "toolchains:freetype"
   fi
 }
 

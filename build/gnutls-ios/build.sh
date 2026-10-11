@@ -14,7 +14,7 @@
 #    meaningless on iOS), no tools/tests/docs.
 #  - Stage markers make re-runs skip completed stages; delete
 #    obj/<stage>.done to force a rebuild.
-set -e
+set -euo pipefail
 
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
@@ -60,10 +60,10 @@ if [ ! -f "$OBJ_DIR/gmp.done" ]; then
     cd "$OBJ_DIR/gmp-$GMP_VER"
     ./configure --host=$HOST --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-assembly --with-pic \
-        > "$OBJ_DIR/gmp-configure.log" 2>&1
+        2>&1 | tee "$OBJ_DIR/gmp-configure.log"
     echo "=== building GMP ==="
-    make -j$JOBS > "$OBJ_DIR/gmp-make.log" 2>&1
-    make install >> "$OBJ_DIR/gmp-make.log" 2>&1
+    make -j$JOBS 2>&1 | tee "$OBJ_DIR/gmp-make.log"
+    make install 2>&1 | tee -a "$OBJ_DIR/gmp-make.log"
     touch "$OBJ_DIR/gmp.done"
 fi
 echo "GMP ok"
@@ -76,10 +76,10 @@ if [ ! -f "$OBJ_DIR/nettle.done" ]; then
     ./configure --host=$HOST --prefix="$PREFIX" \
         --enable-static --disable-shared --disable-documentation \
         --with-include-path="$PREFIX/include" --with-lib-path="$PREFIX/lib" \
-        > "$OBJ_DIR/nettle-configure.log" 2>&1
+        2>&1 | tee "$OBJ_DIR/nettle-configure.log"
     echo "=== building nettle ==="
-    make -j$JOBS > "$OBJ_DIR/nettle-make.log" 2>&1
-    make install >> "$OBJ_DIR/nettle-make.log" 2>&1
+    make -j$JOBS 2>&1 | tee "$OBJ_DIR/nettle-make.log"
+    make install 2>&1 | tee -a "$OBJ_DIR/nettle-make.log"
     touch "$OBJ_DIR/nettle.done"
 fi
 echo "nettle ok"
@@ -100,10 +100,10 @@ if [ ! -f "$OBJ_DIR/gnutls.done" ]; then
         NETTLE_CFLAGS="-I$PREFIX/include" NETTLE_LIBS="-L$PREFIX/lib -lnettle" \
         HOGWEED_CFLAGS="-I$PREFIX/include" HOGWEED_LIBS="-L$PREFIX/lib -lhogweed -lgmp" \
         GMP_CFLAGS="-I$PREFIX/include" GMP_LIBS="-L$PREFIX/lib -lgmp" \
-        > "$OBJ_DIR/gnutls-configure.log" 2>&1
+        2>&1 | tee "$OBJ_DIR/gnutls-configure.log"
     echo "=== building GnuTLS ==="
-    make -j$JOBS > "$OBJ_DIR/gnutls-make.log" 2>&1
-    make install >> "$OBJ_DIR/gnutls-make.log" 2>&1
+    make -j$JOBS 2>&1 | tee "$OBJ_DIR/gnutls-make.log"
+    make install 2>&1 | tee -a "$OBJ_DIR/gnutls-make.log"
     touch "$OBJ_DIR/gnutls.done"
 fi
 echo "GnuTLS ok"

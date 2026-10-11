@@ -158,7 +158,7 @@ if [ $RECONFIGURE -eq 1 ] || [ ! -f "$BUILD/config.h" ]; then
     # A reconfigure over an old tree keeps stale objects of components that
     # are now disabled; start clean.
     [ ! -f Makefile ] || make distclean >/dev/null 2>&1 || true
-    "$SRC/configure" "${CONFIG_ARGS[@]}" > "$OBJ_DIR/configure.log" 2>&1 \
+    "$SRC/configure" "${CONFIG_ARGS[@]}" 2>&1 | tee "$OBJ_DIR/configure.log" \
         || { echo "configure failed; see $OBJ_DIR/configure.log" >&2; exit 1; }
     printf '%s' "$WANT_STAMP" > "$STAMP"
 fi
@@ -166,8 +166,8 @@ fi
 # ------------------------------------------------------------------ build
 echo "=== building ==="
 cd "$BUILD"
-make -j"$JOBS" > "$OBJ_DIR/make.log" 2>&1 || { echo "make failed; see $OBJ_DIR/make.log" >&2; exit 1; }
-make install >> "$OBJ_DIR/make.log" 2>&1
+make -j"$JOBS" 2>&1 | tee "$OBJ_DIR/make.log" || { echo "make failed; see $OBJ_DIR/make.log" >&2; exit 1; }
+make install 2>&1 | tee -a "$OBJ_DIR/make.log"
 
 # ------------------------------------------------------------------ install
 # The app target links these four from app/Madeira/ (ignored, like

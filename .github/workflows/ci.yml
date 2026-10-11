@@ -57,8 +57,9 @@ jobs:
           esac
 
       - name: Cache toolchains（llvm-mingw / gnutls / ffmpeg / freetype 产物）
+        id: toolchains-cache
         if: env.APP_ONLY != '1'
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             toolchains
@@ -116,6 +117,19 @@ jobs:
 
       - name: toolchains（GnuTLS / FFmpeg / freetype）
         run: tools/ci/build-all.sh toolchains
+
+      - name: Save completed dependencies before FEX and Wine
+        if: success() && env.APP_ONLY != '1' && steps.toolchains-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            toolchains
+            build/freetype-ios/build
+            app/Madeira/libavformat.a
+            app/Madeira/libavcodec.a
+            app/Madeira/libswresample.a
+            app/Madeira/libavutil.a
+          key: ${{ steps.toolchains-cache.outputs.cache-primary-key }}
 
       - name: native（FEXCore）
         run: tools/ci/build-all.sh native
