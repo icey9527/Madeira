@@ -99,27 +99,42 @@ stage_toolchains() {
 }
 
 stage_native() {
+  step "Python 依赖（FEX 的 CPU 检测脚本需要 packaging）"
+  # runner 的 Homebrew Python 受 PEP 668 保护；FEX 配置期会调用
+  # Scripts/aarch64_fit_native.py（import packaging）。dev 机有此模块，
+  # CI 补上。装不上也不致命——下一个补丁会给 STRIP 加引号兜底。
+  python3 -m pip install --break-system-packages -q packaging setuptools \
+    || python3 -m pip install -q packaging setuptools || true
+
   step "FEX CMake 兼容补丁（CI 侧，详 HANDOFF『CI 侧补丁』）"
-  # FEX 的 CMakeLists 对 CMAKE_SYSTEM_PROCESSOR 的引用未加引号；在
-  # macos-26 runner 上 -DCMAKE_SYSTEM_NAME=iOS 配置时该值为空，导致
-  # "string no output variable specified" → "Unsupported processor type"。
-  # 补丁：为空时回退到 CMAKE_OSX_ARCHITECTURES，并给引用加引号。
+  # 两处 CI 侧补丁：
+  # 1) CMAKE_SYSTEM_PROCESSOR 在 -DCMAKE_SYSTEM_NAME=iOS 的 runner 上为空，
+  #    FEX 未加引号的引用会解析错位 → "Unsupported processor type"。
+  #    补丁：为空时回退 CMAKE_OSX_ARCHITECTURES，并加引号。
+  # 2) aarch64_fit_native.py 输出为空时（如依赖缺失），未加引号的
+  #    string(STRIP ${AARCH64_CPU} ...) 同样解析错位 → 加引号兜底。
   python3 - <<'PYEOF'
 import io
 p = 'FEX/CMakeLists.txt'
 s = io.open(p, encoding='utf-8').read()
-old = 'string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} processor)'
-new = ('if(NOT CMAKE_SYSTEM_PROCESSOR)\n'
-       '  set(CMAKE_SYSTEM_PROCESSOR "${CMAKE_OSX_ARCHITECTURES}")\n'
-       'endif()\n'
-       'string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" processor)')
-if old in s:
-    io.open(p, 'w', encoding='utf-8').write(s.replace(old, new, 1))
-    print('[patch] FEX/CMakeLists.txt: CMAKE_SYSTEM_PROCESSOR guard applied')
-elif new in s:
-    print('[patch] already applied')
-else:
-    raise SystemExit('[patch] pattern not found — FEX 上游变了？核对 HANDOFF CI 侧补丁')
+edits = [
+    ('string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} processor)',
+     'if(NOT CMAKE_SYSTEM_PROCESSOR)\n'
+     '  set(CMAKE_SYSTEM_PROCESSOR "${CMAKE_OSX_ARCHITECTURES}")\n'
+     'endif()\n'
+     'string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" processor)'),
+    ('string(STRIP ${AARCH64_CPU} AARCH64_CPU)',
+     'string(STRIP "${AARCH64_CPU}" AARCH64_CPU)'),
+]
+for old, new in edits:
+    if old in s:
+        s = s.replace(old, new, 1)
+        print('[patch] applied:', old.splitlines()[0])
+    elif new in s:
+        print('[patch] already applied:', new.splitlines()[0])
+    else:
+        raise SystemExit('[patch] pattern not found: %r — FEX 上游变了？核对 HANDOFF CI 侧补丁' % old[:48])
+io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
   step "FEXCore (build/fex-ios, cmake iOS)"
