@@ -1,0 +1,62 @@
+# port-ci — Madeira iOS 15.6 移植分支的云端编译冒烟
+#
+# 分支纪律（重要）:
+#   * 本 workflow 只允许在 port/ios15.6 上运行（见 guard step）。
+#   * main 保持与上游 willfaust/Madeira 同步的干净镜像，禁止拿来跑构建。
+#   * 构建逻辑全部在 tools/ci/build-all.sh，本文件只做编排 —— 改构建请改脚本。
+#   * workflow_dispatch 需要 workflow 文件存在于默认分支才会出现在 UI；
+#     当前依赖 push 到 port/ios15.6 自动触发。
+name: port-ci
+
+on:
+  push:
+    branches: [port/ios15.6]
+  workflow_dispatch:
+
+concurrency:
+  group: port-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build smoke (macos-26, Debug, unsigned)
+    runs-on: macos-26
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Guard — 只允许 port/ios15.6
+        run: |
+          case "$GITHUB_REF" in
+            refs/heads/port/ios15.6) echo "分支正确: $GITHUB_REF" ;;
+            *) echo "::error::CI 只允许在 port/ios15.6 分支运行（当前 $GITHUB_REF），不要拿原版分支跑构建"; exit 1 ;;
+          esac
+
+      - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
+        run: tools/ci/build-all.sh deps
+
+      - name: toolchains（GnuTLS / FFmpeg / freetype）
+        run: tools/ci/build-all.sh toolchains
+
+      - name: native（FEXCore）
+        run: tools/ci/build-all.sh native
+
+      - name: wine（configure + unix 侧静态库）
+        run: tools/ci/build-all.sh wine
+
+      - name: app（xcodebuild 编译冒烟）
+        run: tools/ci/build-all.sh app
+
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: ci-logs/
+          if-no-files-found: ignore
