@@ -99,6 +99,29 @@ stage_toolchains() {
 }
 
 stage_native() {
+  step "FEX CMake 兼容补丁（CI 侧，详 HANDOFF『CI 侧补丁』）"
+  # FEX 的 CMakeLists 对 CMAKE_SYSTEM_PROCESSOR 的引用未加引号；在
+  # macos-26 runner 上 -DCMAKE_SYSTEM_NAME=iOS 配置时该值为空，导致
+  # "string no output variable specified" → "Unsupported processor type"。
+  # 补丁：为空时回退到 CMAKE_OSX_ARCHITECTURES，并给引用加引号。
+  python3 - <<'PYEOF'
+import io
+p = 'FEX/CMakeLists.txt'
+s = io.open(p, encoding='utf-8').read()
+old = 'string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} processor)'
+new = ('if(NOT CMAKE_SYSTEM_PROCESSOR)\n'
+       '  set(CMAKE_SYSTEM_PROCESSOR "${CMAKE_OSX_ARCHITECTURES}")\n'
+       'endif()\n'
+       'string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" processor)')
+if old in s:
+    io.open(p, 'w', encoding='utf-8').write(s.replace(old, new, 1))
+    print('[patch] FEX/CMakeLists.txt: CMAKE_SYSTEM_PROCESSOR guard applied')
+elif new in s:
+    print('[patch] already applied')
+else:
+    raise SystemExit('[patch] pattern not found — FEX 上游变了？核对 HANDOFF CI 侧补丁')
+PYEOF
+
   step "FEXCore (build/fex-ios, cmake iOS)"
   bash build/fex-ios/build.sh
   missing=""
