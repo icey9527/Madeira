@@ -58,8 +58,12 @@ export PATH="$brew_prefix/opt/bison/bin:$brew_prefix/opt/flex/bin:$brew_prefix/b
 export DEVELOPER_DIR="$(xcode-select -p)"
 
 stage_deps() {
-  if [ "$APP_ONLY" != 1 ]; then
-    step "runner 磁盘瘦身（完整流水线峰值 20-50GB；app-only 需 10-15GB，镜像空闲 136GB，跳过）"
+  local free_kb
+  free_kb="$(df -Pk / | awk 'NR==2{print $4}')"
+  echo "runner 空闲磁盘: $((free_kb / 1024 / 1024)) GiB"
+  if [ "$APP_ONLY" != 1 ] && [ "$free_kb" -lt $((80 * 1024 * 1024)) ]; then
+    step "磁盘不足 80 GiB，清理未使用的 Xcode"
+    tic
     # 在用的 Xcode 绝不删: 同时尊重 xcode-select -p 与镜像的 DEVELOPER_DIR
     # （run #9 的教训: 只看 xcode-select 把镜像默认的 Xcode 删了，
     #  后续 xcrun 全部 "SDK iphoneos cannot be located"）。
@@ -87,11 +91,11 @@ stage_deps() {
     echo "  清理后: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
 
     # 清理后必须验证 iOS SDK 可用，坏则尽快失败并给出诊断
-    kept="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
-    [ -n "$kept" ] || die "磁盘清理后 /Applications 下没有任何 Xcode 了"
-    sudo xcode-select -s "$kept"
-    export DEVELOPER_DIR="$kept"
-    echo "  使用 Xcode: $kept"
+    [ -d "$DEVELOPER_DIR" ] || die "磁盘清理后当前 Xcode 路径不存在"
+    echo "  使用 Xcode: $DEVELOPER_DIR"
+    toc "deps:disk-cleanup"
+  else
+    echo "跳过磁盘清理（app-only 或空闲磁盘 >= 80 GiB）"
   fi
   xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 \
     || die "iphoneos SDK 不可用（xcode-select -p=$(xcode-select -p)）"
