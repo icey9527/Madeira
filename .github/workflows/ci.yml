@@ -17,6 +17,12 @@ concurrency:
   group: port-ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # app-only 快车道（Phase 2 迭代）: 跳过 FEX/Wine 编译，原生库空桩，
+  # xcodebuild 只验证 Swift/ObjC 编译（链接失败=通过）。反馈环 ~15-20 分钟。
+  # Phase 4（原生栈降级）时把 APP_ONLY 改回 '0' 跑完整流水线。
+  APP_ONLY: '1'
+
 jobs:
   build:
     name: Build smoke (Debug, unsigned)
@@ -54,7 +60,7 @@ jobs:
             app/Madeira/libavcodec.a
             app/Madeira/libswresample.a
             app/Madeira/libavutil.a
-          key: toolchains-macos26-v2-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh', 'tools/ci/build-all.sh') }}
+          key: toolchains-macos26-v2-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh') }}
           restore-keys: toolchains-macos26-v2-
 
       - name: Cache ccache（FEX 编译缓存，key 稳定、靠 ccache 自身内容判断命中）

@@ -171,3 +171,6 @@ ci-logs/
 
 # CI ccache 缓存目录（actions/cache 保存）
 .ccache/
+
+# CI app-only 空桩临时目录
+.ci-stubs/

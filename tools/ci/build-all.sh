@@ -19,6 +19,10 @@ R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$R"
 LOGDIR="$R/ci-logs"
 mkdir -p "$LOGDIR"
+# app-only 快车道（Phase 2 迭代用）: 跳过 FEX/Wine 编译，所有原生静态库用
+# 空桩占位，xcodebuild 只验证 Swift/ObjC 编译——链接失败视为编译通过。
+# 完整流水线（真实原生链）把 ci.yml 里的 APP_ONLY 改回 '0'。
+APP_ONLY="${APP_ONLY:-0}"
 
 LLVM_MINGW_VER="20260421"
 LLVM_MINGW_NAME="llvm-mingw-${LLVM_MINGW_VER}-ucrt-macos-universal"
@@ -97,7 +101,9 @@ stage_deps() {
   brew install bison flex sevenzip ccache
 
   step "llvm-mingw $LLVM_MINGW_VER 工具链"
-  if [ ! -x "toolchains/$LLVM_MINGW_NAME/bin/arm64ec-w64-mingw32-clang" ]; then
+  if [ "$APP_ONLY" = 1 ]; then
+    echo "  [app-only] 跳过（llvm-mingw 仅原生 PE 交叉编译需要）"
+  elif [ ! -x "toolchains/$LLVM_MINGW_NAME/bin/arm64ec-w64-mingw32-clang" ]; then
     mkdir -p toolchains
     curl -fL --retry 3 -o "/tmp/$LLVM_MINGW_NAME.tar.xz" \
       "https://github.com/mstorsjo/llvm-mingw/releases/download/$LLVM_MINGW_VER/$LLVM_MINGW_NAME.tar.xz"
@@ -146,12 +152,21 @@ stage_deps() {
   fi
 
   step "freetype 源码 (research/freetype, shallow)"
-  [ -d research/freetype ] || \
+  if [ "$APP_ONLY" = 1 ]; then
+    echo "  [app-only] 跳过（freetype 仅 win32u unix 侧需要）"
+  elif [ -d research/freetype ]; then
+    echo "  已存在"
+  else
     git clone --depth 1 --branch "$FREETYPE_TAG" \
       https://github.com/freetype/freetype.git research/freetype
+  fi
 }
 
 stage_toolchains() {
+  if [ "$APP_ONLY" = 1 ]; then
+    echo "[app-only] 跳过 toolchains（GnuTLS/FFmpeg/freetype 仅原生链需要，app 走空桩）"
+    return 0
+  fi
   step "GnuTLS / GMP / Nettle (build/gnutls-ios)"
   if [ -f toolchains/gnutls-ios/lib/libgnutls.a ]; then
     echo "  [cache] 命中 toolchains 缓存，跳过"
@@ -183,6 +198,19 @@ stage_native() {
   git -C FEX submodule update --init --depth 1 \
     $(git -C FEX config -f .gitmodules --name-only | grep -v 'tests-bins' | tr '\n' ' ')
   echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+
+  step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
+  for sub in FEX wine dxmt madeira-dock; do
+    expected="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
+    actual="$(git -C "$sub" rev-parse HEAD)"
+    printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
+    [ "$expected" = "$actual" ] || { echo "::error::Submodule SHA mismatch: $sub"; exit 1; }
+  done
+
+  if [ "$APP_ONLY" = 1 ]; then
+    echo "[app-only] 跳过 FEX/Wine 原生编译（静态库由 stage_app 统一空桩）"
+    return 0
+  fi
 
   step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
   for sub in FEX wine dxmt madeira-dock; do
@@ -277,6 +305,10 @@ bootstrap_wineserver_base() {
 }
 
 stage_wine() {
+  if [ "$APP_ONLY" = 1 ]; then
+    echo "[app-only] 跳过 wine（libntdll_unix/libwineserver/libwin32u_unix 用空桩）"
+    return 0
+  fi
   step "工具链版本确认（configure 实际使用的 bison/flex 必须来自 brew）"
   command -v bison && bison --version | head -1
   command -v flex && flex --version | head -1
@@ -319,6 +351,40 @@ stage_wine() {
   bash build/win32u-unix/build.sh
 }
 
+stub_all_native_libs() {
+  # app-only 冒烟: 把 App 链接的、由原生链产出的静态库全部空桩占位。
+  # 路径与 app/Madeira.xcodeproj 的 PBXFileReference 一一对应。
+  local sd="$R/.ci-stubs"
+  mkdir -p "$sd"
+  printf 'int __madeira_ci_stub;\n' > "$sd/stub.c"
+  xcrun -sdk iphoneos clang -arch arm64 -c "$sd/stub.c" -o "$sd/stub.o"
+  local libs=(
+    "FEX/build-ios/FEXCore/Source/libFEXCore.a"
+    "FEX/build-ios/FEXCore/Source/libFEXCore_Base.a"
+    "FEX/build-ios/FEXCore/Source/libJemallocLibs.a"
+    "FEX/build-ios/External/fmt/libfmt.a"
+    "FEX/build-ios/External/cephes/libcephes_128bit.a"
+    "FEX/build-ios/External/xxhash/cmake_unofficial/libxxhash.a"
+    "FEX/build-ios/External/SoftFloat-3e/libsoftfloat_3e.a"
+    "app/Madeira/libwineserver.a"
+    "app/Madeira/libntdll_unix.a"
+    "app/Madeira/libwin32u_unix.a"
+    "app/Madeira/libdxmt_combined.a"
+    "app/Madeira/libavformat.a"
+    "app/Madeira/libavcodec.a"
+    "app/Madeira/libswresample.a"
+    "app/Madeira/libavutil.a"
+  )
+  local p
+  for p in "${libs[@]}"; do
+    if [ ! -s "$R/$p" ]; then
+      mkdir -p "$(dirname "$R/$p")"
+      ar rcs "$R/$p" "$sd/stub.o"
+      echo "  [stub] $p"
+    fi
+  done
+}
+
 stage_app() {
   step "磁盘保护线（app 构建前必须 >= 30 GiB 可用）"
   free_kb="$(df -Pk / | awk 'NR==2{print $4}')"
@@ -329,30 +395,45 @@ stage_app() {
     exit 1
   fi
 
-  step "libdxmt_combined.a 占位（真实构建需 iOS LLVM，Phase 4 再做）"
-  echo "DXMT_STATUS=STUB | BUILD_PURPOSE=LINK_SMOKE_TEST_ONLY"
-  if [ ! -s app/Madeira/libdxmt_combined.a ]; then
-    printf 'int __madeira_ci_dxmt_placeholder = 0;\n' > /tmp/dxmt_stub.c
-    xcrun -sdk iphoneos clang -arch arm64 -c /tmp/dxmt_stub.c -o /tmp/dxmt_stub.o
-    ar rcs app/Madeira/libdxmt_combined.a /tmp/dxmt_stub.o
-  fi
-
-  step "DXMT 占位符号审计（确认其余部分不静态引用 dxmt）"
-  if xcrun -sdk iphoneos nm -u app/Madeira/libntdll_unix.a 2>/dev/null | c++filt \
-      | grep -Ei 'dxmt|winemetal|airconv' | head -20; then
-    echo "  ^ 上述符号被静态引用 —— 空库占位会在链接期暴露（属预期，按报错继续）"
+  if [ "$APP_ONLY" = 1 ]; then
+    echo "BUILD_PURPOSE=COMPILE_ONLY（原生库空桩：链接失败=编译通过）"
+    stub_all_native_libs
   else
-    echo "  libntdll_unix.a 无静态 dxmt 引用 —— 空库占位预期可链接通过"
+    echo "DXMT_STATUS=STUB | BUILD_PURPOSE=LINK_SMOKE_TEST_ONLY"
+    if [ ! -s app/Madeira/libdxmt_combined.a ]; then
+      printf 'int __madeira_ci_dxmt_placeholder = 0;\n' > /tmp/dxmt_stub.c
+      xcrun -sdk iphoneos clang -arch arm64 -c /tmp/dxmt_stub.c -o /tmp/dxmt_stub.o
+      ar rcs app/Madeira/libdxmt_combined.a /tmp/dxmt_stub.o
+    fi
+    step "DXMT 占位符号审计（确认其余部分不静态引用 dxmt）"
+    if xcrun -sdk iphoneos nm -u app/Madeira/libntdll_unix.a 2>/dev/null | c++filt \
+        | grep -Ei 'dxmt|winemetal|airconv' | head -20; then
+      echo "  ^ 上述符号被静态引用 —— 空库占位会在链接期暴露（属预期，按报错继续）"
+    else
+      echo "  libntdll_unix.a 无静态 dxmt 引用 —— 空库占位预期可链接通过"
+    fi
   fi
 
   DD="${RUNNER_TEMP:-$R/ci-DD}/Madeira-DD"
   step "xcodebuild 编译冒烟 (Debug, 未签名, DerivedData=$DD)"
+  rc=0
   xcodebuild -project app/Madeira.xcodeproj -scheme Madeira \
     -configuration Debug -destination 'generic/platform=iOS' \
     -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     COMPILER_INDEX_STORE_ENABLE=NO \
-    build > "$LOGDIR/xcodebuild.log" 2>&1
+    build > "$LOGDIR/xcodebuild.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    if [ "$APP_ONLY" = 1 ] && grep -qE "Undefined symbol[s]?|ld: symbol|error: linker command" "$LOGDIR/xcodebuild.log"; then
+      echo "======== COMPILE-ONLY PASS ========"
+      echo "Swift/ObjC 编译全部通过；仅链接失败（app-only 空桩库的预期结果）。未定义符号示例："
+      grep -B1 -A4 "Undefined symbol" "$LOGDIR/xcodebuild.log" | head -24 || true
+      exit 0
+    fi
+    echo "======== xcodebuild 失败，末 100 行 ========"
+    tail -n 100 "$LOGDIR/xcodebuild.log"
+    exit 1
+  fi
   echo "======== APP BUILD OK ========"
   tail -n 5 "$LOGDIR/xcodebuild.log"
 
@@ -401,6 +482,7 @@ summary_fail() {
 cleanup() {
   local rc=$?
   if [ "$rc" -ne 0 ]; then
+    sleep 1   # 给 tee 一点时间把尾部刷进日志文件
     summary_fail || true
   fi
   exit "$rc"
@@ -408,7 +490,8 @@ cleanup() {
 trap cleanup EXIT
 
 touch "$LOGDIR/.stamp"
-step "stage: $STAGE （完整日志 → ci-logs/$STAGE.log）"
-"stage_$STAGE" > "$LOGDIR/$STAGE.log" 2>&1
-step "stage: $STAGE OK —— 输出如下"
-cat "$LOGDIR/$STAGE.log"
+step "stage: $STAGE （实时流式输出，同步写入 ci-logs/$STAGE.log）"
+# 实时流式: 函数不在管道/if 条件里调用（保住 set -e），输出经进程替换
+# 同时进控制台与日志文件——网页上能看到编译进度实时滚动。
+"stage_$STAGE" > >(tee "$LOGDIR/$STAGE.log") 2>&1
+step "stage: $STAGE OK"
