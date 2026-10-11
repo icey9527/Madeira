@@ -36,7 +36,7 @@ export CFLAGS="-O2"
 export AR=$(xcrun -sdk iphoneos -f ar)
 export RANLIB=$(xcrun -sdk iphoneos -f ranlib)
 export STRIP=$(xcrun -sdk iphoneos -f strip)
-export CC_FOR_BUILD="$CLANG -isysroot $(xcrun --sdk macosx --show-sdk-path)"
+export CC_FOR_BUILD="$(xcrun --sdk macosx -f clang) -target $(uname -m)-apple-macos$(sw_vers -productVersion) -isysroot $(xcrun --sdk macosx --show-sdk-path)"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 # Configure probes must not find Homebrew libs meant for macOS.
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
