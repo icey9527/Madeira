@@ -304,6 +304,17 @@ PYEOF
   bash build/fex-ios/build.sh
 }
 
+wine_host_command() {
+  local mac_sdk mac_target
+  mac_sdk="$(xcrun --sdk macosx --show-sdk-path)"
+  mac_target="$(uname -m)-apple-macos$(sw_vers -productVersion)"
+  env -u IPHONEOS_DEPLOYMENT_TARGET \
+    SDKROOT="$mac_sdk" \
+    CC="$(xcrun --sdk macosx -f clang) -target $mac_target -isysroot $mac_sdk" \
+    CXX="$(xcrun --sdk macosx -f clang++) -target $mac_target -isysroot $mac_sdk" \
+    "$@"
+}
+
 stage_wine() {
   if [ "$APP_ONLY" = 1 ]; then
     echo "[app-only] 跳过 wine（libntdll_unix/libwineserver/libwin32u_unix 用空桩）"
@@ -316,9 +327,9 @@ stage_wine() {
   step "wine configure: build-macos (config.h + widl 头文件)"
   if [ ! -f wine/build-macos/Makefile ]; then
     mkdir -p wine/build-macos
-    (cd wine/build-macos && ../configure --disable-tests --without-x)
+    (cd wine/build-macos && wine_host_command ../configure --disable-tests --without-x)
   fi
-  make -C wine/build-macos -j "$NPROC" include
+  wine_host_command make -C wine/build-macos -j "$NPROC" include
   hdrs_m="$(find wine/build-macos/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-macos 生成头文件数: $hdrs_m"
   [ -f wine/build-macos/include/config.h ] || { echo "::error::build-macos/include/config.h 缺失"; exit 1; }
@@ -330,9 +341,9 @@ stage_wine() {
   if [ ! -f wine/build-arm64ec/config.status ]; then
     mkdir -p wine/build-arm64ec
     (cd wine/build-arm64ec && \
-      ../configure --enable-archs=arm64ec --without-x --disable-tests --enable-winegstreamer)
+      wine_host_command ../configure --enable-archs=arm64ec --without-x --disable-tests --enable-winegstreamer)
   fi
-  make -C wine/build-arm64ec -j "$NPROC" include
+  wine_host_command make -C wine/build-arm64ec -j "$NPROC" include
   hdrs_x="$(find wine/build-arm64ec/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-arm64ec 生成头文件数: $hdrs_x"
   [ -f wine/build-arm64ec/include/dwrite.h ] \
@@ -495,7 +506,7 @@ cleanup() {
       local relative="${diagnostic#"$R"/}"
       mkdir -p "$LOGDIR/native-diagnostics/$(dirname "$relative")"
       cp "$diagnostic" "$LOGDIR/native-diagnostics/$relative" || true
-    done < <(find "$R/build" -type f \( -name '*.log' -o -name '*.err' -o -name 'err-*.txt' \) -newer "$LOGDIR/.stamp" 2>/dev/null)
+    done < <(find "$R/build" "$R/wine" -type f \( -name '*.log' -o -name '*.err' -o -name 'err-*.txt' \) -newer "$LOGDIR/.stamp" 2>/dev/null)
   fi
   exit "$rc"
 }
