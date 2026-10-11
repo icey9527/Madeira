@@ -17,10 +17,15 @@ concurrency:
   group: port-ci-${{ github.ref }}
   cancel-in-progress: true
 
+# nightly 预发布需要用默认 GITHUB_TOKEN 创建/删除 Release
+permissions:
+  contents: write
+
 env:
   # app-only 快车道（Phase 2 迭代）: 跳过 FEX/Wine 编译，原生库空桩，
   # xcodebuild 只验证 Swift/ObjC 编译（链接失败=通过）。反馈环 ~15-20 分钟。
-  # Phase 4（原生栈降级）时把 APP_ONLY 改回 '0' 跑完整流水线。
+  # Phase 4（原生栈降级）时把 APP_ONLY 改回 '0' 跑完整流水线，
+  # 届时 nightly 预发布步骤会自动开始产出可安装的 IPA。
   APP_ONLY: '1'
 
 jobs:
@@ -102,6 +107,64 @@ jobs:
 
       - name: app（xcodebuild 编译冒烟）
         run: tools/ci/build-all.sh app
+
+      - name: Package IPA（存在 Madeira.app 时才打包）
+        if: always()
+        run: |
+          DD="${RUNNER_TEMP:-$GITHUB_WORKSPACE/ci-DD}/Madeira-DD"
+          APP="$DD/Build/Products/Debug-iphoneos/Madeira.app"
+          if [ -d "$APP" ]; then
+            mkdir -p ipa/Payload
+            ditto "$APP" ipa/Payload/Madeira.app
+            (cd ipa && zip -qry Madeira-port-nightly-unsigned.ipa Payload)
+            echo "IPA 大小: $(du -h ipa/Madeira-port-nightly-unsigned.ipa | cut -f1)"
+          else
+            echo "（无 Madeira.app 产物——app-only 链接失败属预期，仅上传日志）"
+          fi
+
+      - name: Upload IPA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Madeira-app-build
+          path: ipa/Madeira-port-nightly-unsigned.ipa
+          if-no-files-found: ignore
+
+      # nightly 预发布: 照 Verviewer 的模式（删旧 nightly → 建新预发布）。
+      # 仅完整流水线（APP_ONLY=0）发布——app-only 构建链接的是空桩原生库，
+      # 产物不可运行，发出去会误导人。Phase 4 完成后自动生效。
+      - name: Delete old nightly release
+        if: env.APP_ONLY != '1'
+        uses: cb80/delrel@latest
+        with:
+          tag: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Publish nightly pre-release
+        if: env.APP_ONLY != '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Madeira 15.6 移植 Nightly（自动构建）
+          body: |
+            ## 📦 下载 / Download
+
+            - 👉 **[Madeira-port-nightly-unsigned.ipa](https://github.com/${{ github.repository }}/releases/download/nightly/Madeira-port-nightly-unsigned.ipa)**
+
+            ⚠️ **未签名 IPA**：需用 TrollStore / SideStore / AltStore / Sideloadly
+            以你自己的 Apple ID 重签后安装。JIT：TrollStore 或越狱环境可直接获得。
+
+            | 信息 / Info | 详情 / Details |
+            |---|---|
+            | 🎯 目标系统 / Target | iPadOS 15.6+（移植版） |
+            | 🕐 构建时间 / Build time | ${{ github.event.head_commit.timestamp }} |
+            | 📝 提交 / Commit | [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) |
+
+            ⚠️ 自动构建的夜间预览版，可能不稳定 / Automated nightly preview build.
+          prerelease: true
+          draft: false
+          files: ipa/Madeira-port-nightly-unsigned.ipa
 
       - name: upload logs
         if: always()
