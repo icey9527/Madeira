@@ -324,6 +324,8 @@ stage_wine() {
   command -v bison && bison --version | head -1
   command -v flex && flex --version | head -1
 
+  export PATH="$R/toolchains/$LLVM_MINGW_NAME/bin:$PATH"
+
   step "wine configure: build-macos (config.h + widl 头文件)"
   if [ ! -f wine/build-macos/Makefile ]; then
     mkdir -p wine/build-macos
@@ -337,7 +339,6 @@ stage_wine() {
     | head -2 | grep . || echo "  [warn] ntapi 的 widl 头（mfobjects/mftransform）未找到——ntdll-unix 编译会再暴露"
 
   step "wine configure: build-arm64ec (dwrite 的 widl 头文件)"
-  export PATH="$R/toolchains/$LLVM_MINGW_NAME/bin:$PATH"
   if [ ! -f wine/build-arm64ec/config.status ]; then
     mkdir -p wine/build-arm64ec
     (cd wine/build-arm64ec && \
