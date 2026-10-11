@@ -272,7 +272,7 @@ struct OnboardingView: View {
 
     private func primary(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol).fontWeight(.semibold).frame(maxWidth: .infinity, minHeight: 36)
+            Label(title, systemImage: symbol).font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
         }.buttonStyle(.borderedProminent).controlSize(.large)
     }
 
@@ -552,7 +552,7 @@ struct OnboardingView: View {
                 UIApplication.shared.open(JITShortcutFile.iCloudLink)
             } label: {
                 Label("Add the shortcut", systemImage: "plus.square.on.square")
-                    .fontWeight(.semibold).frame(maxWidth: .infinity, minHeight: 36)
+                    .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
             }
             .buttonStyle(.bordered).controlSize(.large)
             if let url = JITShortcutFile.url {

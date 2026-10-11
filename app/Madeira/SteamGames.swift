@@ -1258,7 +1258,8 @@ struct SteamEntrySection: View {
         }
         .onAppear { dock.refresh(); games.refresh() }
         .task(id: download?.state) {
-            let values = try? URL.documentsDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            let values = try? docs?.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
             freeSpace = values?.volumeAvailableCapacityForImportantUsage
         }
         .task(id: "\(entry.steamStart ?? "dock") \(installed?.installed == true) \(download == nil)") { await resolveProgram() }
