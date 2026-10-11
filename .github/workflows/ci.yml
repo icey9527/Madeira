@@ -26,7 +26,8 @@ env:
   # xcodebuild 只验证 Swift/ObjC 编译（仅预期未定义符号链接失败允许通过）。
   # Phase 4（原生栈降级）时把 APP_ONLY 改回 '0' 跑完整流水线，
   # 届时 nightly 预发布步骤会自动开始产出可安装的 IPA。
-  APP_ONLY: '1'
+  APP_ONLY: '0'
+  IPHONEOS_DEPLOYMENT_TARGET: '15.6'
 
 jobs:
   build:
@@ -66,8 +67,8 @@ jobs:
             app/Madeira/libavcodec.a
             app/Madeira/libswresample.a
             app/Madeira/libavutil.a
-          key: toolchains-macos26-v2-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh') }}
-          restore-keys: toolchains-macos26-v2-
+          key: toolchains-macos26-ios15.6-v3-${{ hashFiles('build/gnutls-ios/build.sh', 'build/ffmpeg/build.sh', 'build/freetype-ios/build.sh') }}
+          restore-keys: toolchains-macos26-ios15.6-v3-
 
       - name: Cache ccache（FEX 编译缓存，key 稳定、靠 ccache 自身内容判断命中）
         if: env.APP_ONLY != '1'
@@ -107,6 +108,16 @@ jobs:
 
       - name: wine（configure + unix 侧静态库）
         run: tools/ci/build-all.sh wine
+
+      - name: Pairing library（真实 iOS 静态库）
+        if: env.APP_ONLY != '1'
+        run: |
+          rustup target add aarch64-apple-ios
+          bash build/rppairing-ios/build.sh > >(tee ci-logs/rppairing.log) 2>&1
+
+      - name: DXMT（真实图形静态库）
+        if: env.APP_ONLY != '1'
+        run: bash build/dxmt-ios/build.sh > >(tee ci-logs/dxmt.log) 2>&1
 
       - name: app（xcodebuild 编译冒烟）
         run: tools/ci/build-all.sh app
@@ -190,7 +201,8 @@ jobs:
             - 👉 **[Madeira-port-nightly-unsigned.ipa](https://github.com/${{ github.repository }}/releases/download/nightly/Madeira-port-nightly-unsigned.ipa)**
 
             ⚠️ **未签名 IPA**：需用 TrollStore / SideStore / AltStore / Sideloadly
-            以你自己的 Apple ID 重签后安装。JIT：TrollStore 或越狱环境可直接获得。
+            安装。当前优先验证 iPadOS 15.6 上的 UI 启动；游戏兼容性尚未验收。
+            小探针已验证 TrollStore 的 Open with JIT 路径，主 App 的 JIT 路径仍需适配。
 
             | 信息 / Info | 详情 / Details |
             |---|---|

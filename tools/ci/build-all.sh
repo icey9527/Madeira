@@ -394,19 +394,9 @@ stage_app() {
     echo "BUILD_PURPOSE=COMPILE_ONLY（原生库空桩：链接失败=编译通过）"
     stub_all_native_libs
   else
-    echo "DXMT_STATUS=STUB | BUILD_PURPOSE=LINK_SMOKE_TEST_ONLY"
-    if [ ! -s app/Madeira/libdxmt_combined.a ]; then
-      printf 'int __madeira_ci_dxmt_placeholder = 0;\n' > /tmp/dxmt_stub.c
-      xcrun -sdk iphoneos clang -arch arm64 -c /tmp/dxmt_stub.c -o /tmp/dxmt_stub.o
-      ar rcs app/Madeira/libdxmt_combined.a /tmp/dxmt_stub.o
-    fi
-    step "DXMT 占位符号审计（确认其余部分不静态引用 dxmt）"
-    if xcrun -sdk iphoneos nm -u app/Madeira/libntdll_unix.a 2>/dev/null | c++filt \
-        | grep -Ei 'dxmt|winemetal|airconv' | head -20; then
-      echo "  ^ 上述符号被静态引用 —— 空库占位会在链接期暴露（属预期，按报错继续）"
-    else
-      echo "  libntdll_unix.a 无静态 dxmt 引用 —— 空库占位预期可链接通过"
-    fi
+    echo "BUILD_PURPOSE=FULL_NATIVE_BUILD"
+    [ -s app/Madeira/libdxmt_combined.a ] || die "真实 DXMT 静态库缺失"
+    [ -s app/Madeira/libmadeira_rppairing.a ] || die "真实配对静态库缺失"
   fi
 
   DD="${RUNNER_TEMP:-$R/ci-DD}/Madeira-DD"

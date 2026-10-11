@@ -89,7 +89,7 @@ if [ ! -f "$SRC/configure" ]; then
 fi
 
 # ------------------------------------------------------------------ configure
-HOSTFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=17.0"
+HOSTFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=${IPHONEOS_DEPLOYMENT_TARGET:-17.0}"
 CONFIG_ARGS=(
     --prefix="$PREFIX"
     --enable-cross-compile
