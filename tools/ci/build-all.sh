@@ -48,9 +48,6 @@ stage_deps() {
 
   step "VC++ 运行时 DLL (app/Madeira/x86_64-vcruntime)"
   if [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
-    need="concrt140.dll msvcp140.dll msvcp140_1.dll msvcp140_2.dll msvcp140_atomic_wait.dll \
-msvcp140_codecvt_ids.dll vcamp140.dll vccorlib140.dll vcomp140.dll \
-vcruntime140.dll vcruntime140_1.dll vcruntime140_threads.dll"
     curl -fL --retry 3 -o /tmp/VC_redist.x64.exe "https://aka.ms/vs/17/release/vc_redist.x64.exe"
     rm -rf /tmp/vcredist && mkdir -p /tmp/vcredist
     7zz x /tmp/VC_redist.x64.exe -o/tmp/vcredist >/dev/null
@@ -61,20 +58,22 @@ vcruntime140.dll vcruntime140_1.dll vcruntime140_threads.dll"
       7zz x "$f" -o"/tmp/vcredist/x_$(basename "$f")" >/dev/null 2>&1 || true
     done
     mkdir -p app/Madeira/x86_64-vcruntime
-    # 全局按文件名收 12 个 DLL（布局再变也能找到）
-    for n in $need; do
-      src="$(find /tmp/vcredist -name "$n" -type f | head -1)"
-      [ -n "$src" ] && cp "$src" app/Madeira/x86_64-vcruntime/
+    # 按文件名全局收集 12 个运行时 DLL（安装器布局再变也能找到）
+    for n in concrt140.dll msvcp140.dll msvcp140_1.dll msvcp140_2.dll \
+             msvcp140_atomic_wait.dll msvcp140_codecvt_ids.dll vcamp140.dll \
+             vccorlib140.dll vcomp140.dll vcruntime140.dll vcruntime140_1.dll \
+             vcruntime140_threads.dll; do
+      src="$(find /tmp/vcredist -name "$n" -type f 2>/dev/null | head -1)"
+      if [ -n "$src" ]; then
+        cp "$src" app/Madeira/x86_64-vcruntime/
+      fi
     done
-    miss=""
-    for n in $need; do
-      [ -f "app/Madeira/x86_64-vcruntime/$n" ] || miss="$miss $n"
-    done
-    if [ -n "$miss" ]; then
-      # 编译冒烟不需要这些 DLL（它们只是游戏的运行时资源，不参与链接），
-      # 提取不全就放占位目录让构建继续；真实打包（Phase 4）再按
-      # tools/fetch-vcruntime.md 补齐。
-      echo "[deps] 警告: VC 运行时提取不全（缺:$miss）—— 用占位目录继续，CI 产物不含 VC 运行时"
+    got="$(find app/Madeira/x86_64-vcruntime -name '*.dll' | wc -l | tr -d ' ')"
+    if [ "${got:-0}" -lt 12 ]; then
+      # 编译冒烟不需要这些 DLL（它们只是 Windows 游戏的运行时资源，不参与
+      # 编译链接）；提取不全就放占位目录让构建继续。真实打包（Phase 4）
+      # 按 tools/fetch-vcruntime.md 补齐。
+      echo "[deps] 警告: VC 运行时只收集到 ${got:-0}/12 个 —— 用占位目录继续，CI 产物不含 VC 运行时"
       rm -f app/Madeira/x86_64-vcruntime/*.dll
       printf 'CI compile-smoke placeholder — real VC++ runtime DLLs NOT bundled.\nObtain them per tools/fetch-vcruntime.md for real packaging.\n' \
         > app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt
@@ -104,13 +103,13 @@ stage_native() {
   bash build/fex-ios/build.sh
   missing=""
   for lib in libFEXCore.a libFEXCore_Base.a libJemallocLibs.a; do
-    [ -f "FEX/build-ios/FEXCore/Source/$lib" ] || missing="$missing $lib"
+    [ -f "FEX/build-ios/FEXCore/Source/$lib" ] || missing="${missing:-} $lib"
   done
   for lib in libfmt.a libcephes_128bit.a libxxhash.a libsoftfloat_3e.a; do
-    find FEX/build-ios -name "$lib" -print -quit | grep -q . || missing="$missing $lib"
+    find FEX/build-ios -name "$lib" -print -quit | grep -q . || missing="${missing:-} $lib"
   done
-  if [ -n "$missing" ]; then
-    step "FEX 全量构建（上面还缺:$missing）"
+  if [ -n "${missing:-}" ]; then
+    step "FEX 全量构建（上面还缺:${missing:-}）"
     cmake --build FEX/build-ios -j "$NPROC"
   fi
 }
