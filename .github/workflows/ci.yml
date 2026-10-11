@@ -19,8 +19,11 @@ concurrency:
 
 jobs:
   build:
-    name: Build smoke (macos-26, Debug, unsigned)
-    runs-on: macos-26
+    name: Build smoke (Debug, unsigned)
+    # 2026-10-11 用户决策：A/B 实测 Intel runner（4 核 / 14GB RAM，标准规格）
+    # 与 M1（3 核 / 7GB）的编译耗时。两轮的 deps 阶段都会记录
+    # Xcode/clang/cmake/bison 版本，注意对比镜像差异。
+    runs-on: macos-26-intel
     timeout-minutes: 240
     defaults:
       run:
