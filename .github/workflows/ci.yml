@@ -70,6 +70,12 @@ jobs:
           key: ccache-macos26-v1-${{ hashFiles('build/fex-ios/build.sh') }}
           restore-keys: ccache-macos26-v1-
 
+      - name: Cache VC++ 运行时 DLL（12 个，内容静态，静态 key）
+        uses: actions/cache@v4
+        with:
+          path: app/Madeira/x86_64-vcruntime
+          key: vcruntime-x64-v1
+
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
         run: tools/ci/build-all.sh deps
 

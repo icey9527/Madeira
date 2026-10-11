@@ -51,40 +51,41 @@ export PATH="$brew_prefix/opt/bison/bin:$brew_prefix/opt/flex/bin:$brew_prefix/b
 export DEVELOPER_DIR="$(xcode-select -p)"
 
 stage_deps() {
-  step "runner 磁盘瘦身（macOS runner 磁盘是最稀缺资源）"
-  # 磁盘基线
-  echo "  清理前: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
-  # 在用的 Xcode 绝不删: 同时尊重 xcode-select -p 与镜像的 DEVELOPER_DIR
-  # （run #9 的教训: 只看 xcode-select 把镜像默认的 Xcode 删了，
-  #  后续 xcrun 全部 "SDK iphoneos cannot be located"）。
-  keep1="$(xcode-select -p 2>/dev/null || true)"
-  keep2="${DEVELOPER_DIR:-}"
-  keep_apps=""
-  for k in "$keep1" "$keep2"; do
-    [ -n "$k" ] || continue
-    keep_apps="$keep_apps ${k%/Contents/Developer}"
-  done
-  for d in /Applications/Xcode*.app; do
-    [ -d "$d" ] || continue
-    skip=""
-    for k in $keep_apps; do
-      [ "$(cd "$d" && pwd -P)" = "$(cd "$k" && pwd -P)" ] && skip=1
+  if [ "$APP_ONLY" != 1 ]; then
+    step "runner 磁盘瘦身（完整流水线峰值 20-50GB；app-only 需 10-15GB，镜像空闲 136GB，跳过）"
+    # 在用的 Xcode 绝不删: 同时尊重 xcode-select -p 与镜像的 DEVELOPER_DIR
+    # （run #9 的教训: 只看 xcode-select 把镜像默认的 Xcode 删了，
+    #  后续 xcrun 全部 "SDK iphoneos cannot be located"）。
+    keep1="$(xcode-select -p 2>/dev/null || true)"
+    keep2="${DEVELOPER_DIR:-}"
+    keep_apps=""
+    for k in "$keep1" "$keep2"; do
+      [ -n "$k" ] || continue
+      keep_apps="$keep_apps ${k%/Contents/Developer}"
     done
-    if [ -z "$skip" ]; then
-      echo "  删除: $d"
-      sudo rm -rf "$d"
-    fi
-  done
-  sudo rm -rf /Users/runner/Library/Android/sdk /usr/local/lib/android \
-    /usr/local/.ghcup /opt/hostedtoolcache/CodeQL 2>/dev/null || true
-  echo "  清理后: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+    echo "  清理前: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
+    for d in /Applications/Xcode*.app; do
+      [ -d "$d" ] || continue
+      skip=""
+      for k in $keep_apps; do
+        [ "$(cd "$d" && pwd -P)" = "$(cd "$k" && pwd -P)" ] && skip=1
+      done
+      if [ -z "$skip" ]; then
+        echo "  删除: $d"
+        sudo rm -rf "$d"
+      fi
+    done
+    sudo rm -rf /Users/runner/Library/Android/sdk /usr/local/lib/android \
+      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL 2>/dev/null || true
+    echo "  清理后: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
 
-  # 清理后必须验证 iOS SDK 可用，坏则尽快失败并给出诊断
-  kept="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
-  [ -n "$kept" ] || die "磁盘清理后 /Applications 下没有任何 Xcode 了"
-  sudo xcode-select -s "$kept"
-  export DEVELOPER_DIR="$kept"
-  echo "  使用 Xcode: $kept"
+    # 清理后必须验证 iOS SDK 可用，坏则尽快失败并给出诊断
+    kept="$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)"
+    [ -n "$kept" ] || die "磁盘清理后 /Applications 下没有任何 Xcode 了"
+    sudo xcode-select -s "$kept"
+    export DEVELOPER_DIR="$kept"
+    echo "  使用 Xcode: $kept"
+  fi
   xcrun --sdk iphoneos --show-sdk-path >/dev/null 2>&1 \
     || die "iphoneos SDK 不可用（xcode-select -p=$(xcode-select -p)）"
 
@@ -96,6 +97,9 @@ stage_deps() {
   echo "cmake: $(cmake --version | head -1)"
   echo "bison: $(bison --version 2>/dev/null | head -1)（必须 >= 3.0，且来自 brew 而非系统 2.3）"
   echo "flex: $(flex --version 2>/dev/null | head -1)"
+
+  step "Metal 工具链下载（Xcode 26 拆分为独立组件；App 的 .metal 编译必需）"
+  xcodebuild -downloadComponent MetalToolchain
 
   step "brew 工具 (bison / flex / sevenzip / ccache)"
   brew install bison flex sevenzip ccache
