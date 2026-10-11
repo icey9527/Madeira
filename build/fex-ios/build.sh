@@ -11,5 +11,10 @@ if [ ! -f "$B/CMakeCache.txt" ]; then
         -DBUILD_TESTING=OFF -DBUILD_THUNKS=OFF -DBUILD_FEXCONFIG=OFF -DBUILD_FEX_LINUX_TESTS=OFF \
         -DENABLE_FEX_ALLOCATOR=OFF -DENABLE_ASSERTIONS=OFF -DENABLE_CLANG_THUNKS=ON -DENABLE_CCACHE=ON
 fi
+# FEX_CONFIGURE_ONLY=1: 只跑 configure 生成头文件（app-only CI 快车道用），不编译。
+if [ "${FEX_CONFIGURE_ONLY:-0}" = "1" ]; then
+    echo "configure-only: 生成头文件完成，跳过编译"
+    exit 0
+fi
 cmake --build "$B" --target FEXCore FEXCore_Base
 ls "$B/FEXCore/Source/"*.a

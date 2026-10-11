@@ -190,37 +190,30 @@ stage_toolchains() {
 }
 
 stage_native() {
-  step "浅克隆子模块（跳过 FEX 的三个测试数据仓）"
-  # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
-  git submodule update --init --depth 1 -- FEX wine dxmt madeira-dock
+  step "浅克隆子模块（app-only 仅需 FEX；完整模式全量并跳过三个测试数据仓）"
+  if [ "$APP_ONLY" = 1 ]; then
+    git submodule update --init --depth 1 -- FEX
+  else
+    # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
+    git submodule update --init --depth 1 -- FEX wine dxmt madeira-dock
+  fi
   # FEX 嵌套子模块: BUILD_TESTING=OFF，三个 *-tests-bins 数据仓（数百 MB）
   # 不参与构建，跳过；其余（fmt/range-v3/rpmalloc/jemalloc/vixl 等）保留。
   git -C FEX submodule update --init --depth 1 \
     $(git -C FEX config -f .gitmodules --name-only | grep -v 'tests-bins' | tr '\n' ' ')
   echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
 
-  step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
-  for sub in FEX wine dxmt madeira-dock; do
-    expected="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
-    actual="$(git -C "$sub" rev-parse HEAD)"
-    printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
-    [ "$expected" = "$actual" ] || { echo "::error::Submodule SHA mismatch: $sub"; exit 1; }
-  done
-
-  if [ "$APP_ONLY" = 1 ]; then
-    echo "[app-only] 跳过 FEX/Wine 原生编译（静态库由 stage_app 统一空桩）"
-    return 0
+  if [ "$APP_ONLY" != 1 ]; then
+    step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
+    for sub in FEX wine dxmt madeira-dock; do
+      expected="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
+      actual="$(git -C "$sub" rev-parse HEAD)"
+      printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
+      [ "$expected" = "$actual" ] || { echo "::error::Submodule SHA mismatch: $sub"; exit 1; }
+    done
   fi
 
-  step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
-  for sub in FEX wine dxmt madeira-dock; do
-    expected="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
-    actual="$(git -C "$sub" rev-parse HEAD)"
-    printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
-    [ "$expected" = "$actual" ] || { echo "::error::Submodule SHA mismatch: $sub"; exit 1; }
-  done
-
-  step "Python 依赖（FEX 的 CPU 检测脚本需要 packaging）"
+  step "Python 依赖（FEX 配置期脚本需要 packaging）"
   # runner 的 Homebrew Python 受 PEP 668 保护；FEX 配置期会调用
   # Scripts/aarch64_fit_native.py（import packaging）。dev 机有此模块，
   # CI 补上。装不上也不致命——下一个补丁会给 STRIP 加引号兜底。
@@ -258,50 +251,17 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
+  if [ "$APP_ONLY" = 1 ]; then
+    # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
+    # ConfigValues.inl 等生成头（约 1 分钟），其余原生库由 stage_app 空桩。
+    step "[app-only] FEX configure-only（生成头文件，不编译）"
+    FEX_CONFIGURE_ONLY=1 bash build/fex-ios/build.sh
+    echo "[app-only] wine/dxmt 静态库由 stage_app 统一空桩"
+    return 0
+  fi
+
   step "FEXCore (build/fex-ios, cmake iOS)"
   bash build/fex-ios/build.sh
-  missing=""
-  for lib in libFEXCore.a libFEXCore_Base.a libJemallocLibs.a; do
-    [ -f "FEX/build-ios/FEXCore/Source/$lib" ] || missing="${missing:-} $lib"
-  done
-  for lib in libfmt.a libcephes_128bit.a libxxhash.a libsoftfloat_3e.a; do
-    find FEX/build-ios -name "$lib" -print -quit | grep -q . || missing="${missing:-} $lib"
-  done
-  if [ -n "${missing:-}" ]; then
-    step "FEX 全量构建（上面还缺:${missing:-}）"
-    cmake --build FEX/build-ios -j "$NPROC"
-  fi
-}
-
-bootstrap_wineserver_base() {
-  # CI 引导: 仓库不含基础版 app/Madeira/libwineserver.a。用与
-  # build/wineserver/build.sh 完全相同的编译参数把 wine/server/*.c 全量
-  # 编译成基础库；随后的官方脚本会替换其中的补丁对象。
-  local SDK WINE_SRC OBJ name src
-  SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-  WINE_SRC="$R/wine"
-  OBJ="build/wineserver/obj"
-  mkdir -p "$OBJ"
-  echo "  [bootstrap] 全量编译 wine/server/*.c -> 基础 libwineserver.a"
-  for src in "$WINE_SRC"/server/*.c; do
-    name="$(basename "$src" .c)"
-    xcrun -sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
-      -miphoneos-version-min=17.0 -O2 -fPIC \
-      -I"$WINE_SRC/include" -I"$WINE_SRC/include/wine" \
-      -I"$WINE_SRC/build-macos/include" \
-      -I"$R/build/wineserver" -I"$WINE_SRC/server" \
-      -I"$R/build/ntdll-unix/shims" -I"$R/build/madsync" -DHAVE_LINUX_NTSYNC_H=1 \
-      -include "$R/build/wineserver/config_ios.h" -include stdarg.h \
-      -include "$R/build/wineserver/unicode_fix.h" \
-      -include "$R/build/wineserver/wineserver_ios_kill.h" \
-      -DBINDIR='"/usr/local/bin"' -DDATADIR='"/usr/local/share"' \
-      -D__WINESRC__ -DWINE_IOS=1 -Dmain=wineserver_main \
-      -Wno-implicit-function-declaration \
-      -c "$src" -o "$OBJ/base-$name.o" 2>"$OBJ/base-$name.err" \
-      || { echo "  [bootstrap] 失败: $name"; cat "$OBJ/base-$name.err"; exit 1; }
-  done
-  ar rcs "$OBJ/libwineserver.a" "$OBJ"/base-*.o
-  cp "$OBJ/libwineserver.a" app/Madeira/libwineserver.a
 }
 
 stage_wine() {
