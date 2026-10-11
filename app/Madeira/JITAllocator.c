@@ -13,9 +13,34 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <mach-o/dyld.h>
 #include <os/log.h>
 #include <os/proc.h>
+
+void madeira_startup_log(const char *event) {
+    const char *home = getenv("HOME");
+    char directory[1024], path[1100], message[512];
+    int length = snprintf(message, sizeof(message), "%lld pid=%d %s\n", (long long)time(NULL), getpid(), event);
+    if (length <= 0 || length >= (int)sizeof(message)) return;
+    write(STDERR_FILENO, message, (size_t)length);
+    if (!home || !*home) return;
+    if (snprintf(directory, sizeof(directory), "%s/Documents", home) >= (int)sizeof(directory)) return;
+    mkdir(directory, 0755);
+    if (snprintf(path, sizeof(path), "%s/madeira-startup.log", directory) >= (int)sizeof(path)) return;
+    int descriptor = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (descriptor < 0) return;
+    size_t offset = 0;
+    while (offset < (size_t)length) {
+        ssize_t written = write(descriptor, message + offset, (size_t)length - offset);
+        if (written < 0 && errno == EINTR) continue;
+        if (written <= 0) break;
+        offset += (size_t)written;
+    }
+    fsync(descriptor);
+    close(descriptor);
+}
 
 // csops syscall - used to check CS_DEBUGGED flag
 #ifndef CS_DEBUGGED
@@ -910,6 +935,7 @@ unsigned madeira_early_intruder_tag, madeira_early_intruder_prot;
 
 __attribute__((constructor(101), used)) static void madeira_early_va_claim(void)
 {
+    madeira_startup_log("startup-v1: native allocator begin");
     const vm_address_t win = 0x140000000ul, winsz = 0x8000000ul;       /* 128MB, see ml1037 */
     vm_address_t a = win;
     vm_size_t sz;
@@ -944,6 +970,7 @@ __attribute__((constructor(101), used)) static void madeira_early_va_claim(void)
             madeira_early_intruder_tag = info.user_tag; madeira_early_intruder_prot = (unsigned)info.protection;
         }
     }
+    madeira_startup_log("startup-v1: native allocator complete");
 }
 
 /* ml1249: METAL API VALIDATION ON DEMAND.
@@ -957,9 +984,14 @@ __attribute__((constructor(101), used)) static void madeira_early_va_claim(void)
 __attribute__((constructor(102), used)) static void madeira_metal_validation_opt_in(void)
 {
     /* Metal API validation for this launch (debug layer, reports instead of aborts). */
-    if (!madeira_cfg_bool("metal-validation", 0)) return;
+    madeira_startup_log("startup-v1: Metal validation config begin");
+    if (!madeira_cfg_bool("metal-validation", 0)) {
+        madeira_startup_log("startup-v1: Metal validation disabled");
+        return;
+    }
     setenv("MTL_DEBUG_LAYER", "1", 1);
     setenv("MTL_DEBUG_LAYER_ERROR_MODE", "nslog", 1);
     setenv("MTL_DEBUG_LAYER_WARNING_MODE", "nslog", 1);
     setenv("CFLOG_FORCE_STDERR", "1", 1);
+    madeira_startup_log("startup-v1: Metal validation enabled");
 }

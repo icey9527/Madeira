@@ -447,6 +447,10 @@ stage_app() {
   fi
 
   DD="$R/ci-DD/Madeira-DD"
+  rm -f "$DD/Build/Products/Debug-iphoneos/Madeira.app/Madeira.debug.dylib" \
+    "$DD/Build/Products/Debug-iphoneos/Madeira.app/__preview.dylib" \
+    "$DD/Build/Products/Debug-iphoneos/Madeira.app/PlugIns/MadeiraJITHelper.appex/MadeiraJITHelper.debug.dylib" \
+    "$DD/Build/Products/Debug-iphoneos/Madeira.app/PlugIns/MadeiraJITHelper.appex/__preview.dylib"
   step "xcodebuild 编译冒烟 (Debug, 未签名, DerivedData=$DD)"
   rc=0
   tic
@@ -454,6 +458,7 @@ stage_app() {
     -configuration Debug -destination 'generic/platform=iOS' \
     -derivedDataPath "$DD" \
     CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+    ENABLE_DEBUG_DYLIB=NO \
     COMPILER_INDEX_STORE_ENABLE=NO \
     OTHER_SWIFT_FLAGS='$(inherited) -Xfrontend -warn-long-expression-type-checking=500 -Xfrontend -warn-long-function-bodies=1000' \
     -showBuildTimingSummary \

@@ -9,6 +9,8 @@
 extern "C" {
 #endif
 
+void madeira_startup_log(const char *event);
+
 // Opaque handle to a dual-mapped JIT region
 typedef struct JITRegion JITRegion;
 

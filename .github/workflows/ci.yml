@@ -376,6 +376,20 @@ jobs:
           DD="$GITHUB_WORKSPACE/ci-DD/Madeira-DD"
           APP="$DD/Build/Products/Debug-iphoneos/Madeira.app"
           if [ -x "$APP/Madeira" ]; then
+            [ ! -e "$APP/Madeira.debug.dylib" ] || { echo "::error::安装包仍包含拆分的主程序 debug dylib"; exit 1; }
+            codesign --force --sign - --timestamp=none --generate-entitlement-der \
+              --entitlements app/Madeira/Madeira.entitlements "$APP/Madeira"
+            codesign --display --entitlements - "$APP/Madeira" > ci-logs/nightly-main-entitlements.plist
+            python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          actual = plistlib.loads(Path('ci-logs/nightly-main-entitlements.plist').read_bytes())
+          expected = plistlib.loads(Path('app/Madeira/Madeira.entitlements').read_bytes())
+          banned = {'dynamic-codesigning', 'com.apple.private.cs.debugger', 'com.apple.private.skip-library-validation'}
+          if actual != expected or banned.intersection(actual):
+              raise SystemExit('Unexpected or banned main executable entitlements')
+          print('Packaged main executable entitlements verified')
+          PY
             mkdir -p ipa/Payload
             ditto "$APP" ipa/Payload/Madeira.app
             (cd ipa && zip -qry Madeira-port-nightly-unsigned.ipa Payload)
