@@ -1,6 +1,10 @@
 #import <UIKit/UIKit.h>
 #include "JITAllocator.h"
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 static NSString *probeLogPath;
 
@@ -115,6 +119,18 @@ static void allocatorLog(const char *message) {
 @end
 
 int main(int argc, char *argv[]) {
+    const char *container = getenv("HOME");
+    if (container) {
+        char path[4096];
+        snprintf(path, sizeof(path), "%s/Documents/jit-probe.log", container);
+        int descriptor = open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+        if (descriptor >= 0) {
+            const char message[] = "MAIN: process entered main before UIKit initialization.\n";
+            write(descriptor, message, sizeof(message) - 1);
+            fsync(descriptor);
+            close(descriptor);
+        }
+    }
     @autoreleasepool {
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(ProbeApp.class));
     }

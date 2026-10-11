@@ -18,6 +18,10 @@ The probe records code-signing status and device OS, bypasses the existing
 `CS_DEBUGGED` readiness gate, and calls no debugger preparation protocol.
 It deliberately leaves an execution fault to the OS rather than catching it and
 reporting a false success. Logs are flushed before each execution attempt.
+Build 2 disables production-only address-space reservation and Metal validation
+constructors in the probe. The main App keeps both constructors. A POSIX log
+marker is flushed on entry to `main`, before UIKit initializes. CI retains dSYM
+symbols for interpreting device crash reports.
 
 PASS proves this allocator can execute and rewrite a small anonymous code region
 under this installation's permissions. It does not prove production pool sizing,

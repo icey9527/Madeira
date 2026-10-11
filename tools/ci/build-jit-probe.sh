@@ -7,7 +7,7 @@ probe_build="$probe_root/.ci-jit-probe"
 probe_app="$probe_build/Payload/MadeiraJITProbe.app"
 mkdir -p "$probe_app" "$probe_root/ipa" "$probe_root/ci-logs"
 probe_sdk="$(xcrun --sdk iphoneos --show-sdk-path)"
-probe_flags=(-arch arm64 -isysroot "$probe_sdk" -miphoneos-version-min=15.6 -O0 -Iapp/Madeira)
+probe_flags=(-arch arm64 -isysroot "$probe_sdk" -miphoneos-version-min=15.6 -DMADEIRA_JIT_PROBE=1 -O0 -g -Iapp/Madeira)
 xcrun --sdk iphoneos clang "${probe_flags[@]}" -c app/Madeira/JITAllocator.c -o "$probe_build/JITAllocator.o"
 xcrun --sdk iphoneos clang "${probe_flags[@]}" -fobjc-arc tools/jit-probe/main.m "$probe_build/JITAllocator.o" \
     -framework UIKit -framework Foundation -o "$probe_app/MadeiraJITProbe"
@@ -22,8 +22,11 @@ info = {
     'CFBundleName': 'MadeiraJITProbe',
     'CFBundleDisplayName': 'Madeira JIT Probe',
     'CFBundlePackageType': 'APPL',
+    'CFBundleInfoDictionaryVersion': '6.0',
+    'CFBundleSupportedPlatforms': ['iPhoneOS'],
+    'CFBundleDevelopmentRegion': 'en',
     'CFBundleShortVersionString': '0.1',
-    'CFBundleVersion': '1',
+    'CFBundleVersion': '2',
     'MinimumOSVersion': '15.6',
     'LSRequiresIPhoneOS': True,
     'UIDeviceFamily': [1, 2],
@@ -36,10 +39,14 @@ info = {
 }
 with (Path(os.environ['PROBE_APP']) / 'Info.plist').open('wb') as output:
     plistlib.dump(info, output)
+(Path(os.environ['PROBE_APP']) / 'PkgInfo').write_bytes(b'APPL????')
 PY
+xcrun dsymutil "$probe_app/MadeiraJITProbe" -o "$probe_build/MadeiraJITProbe.dSYM"
+(cd "$probe_build" && zip -qry "$probe_root/ci-logs/jit-probe-symbols.zip" MadeiraJITProbe.dSYM)
 codesign --force --sign - --entitlements tools/jit-probe/entitlements.plist "$probe_app"
 codesign --verify --strict "$probe_app"
 otool -l "$probe_app/MadeiraJITProbe" > ci-logs/jit-probe-load-commands.log
+xcrun nm -u "$probe_app/MadeiraJITProbe" > ci-logs/jit-probe-imports.log
 codesign -d --entitlements :- "$probe_app" > ci-logs/jit-probe-entitlements.plist
 otool -l "$probe_app/MadeiraJITProbe" | awk '/cmd LC_BUILD_VERSION/ { found = 1 } found && /minos/ { if ($2 != "15.6") exit 1; passed = 1; exit } END { if (!passed) exit 1 }'
 (cd "$probe_build" && zip -qry "$probe_root/ipa/Madeira-JIT-Probe.ipa" Payload)
