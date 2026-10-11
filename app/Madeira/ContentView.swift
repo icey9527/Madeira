@@ -1273,7 +1273,7 @@ struct ContentView: View {
          * NavigationStack is single-column on every device. Safe here: there are
          * no NavigationLinks anywhere in the app, so nothing depended on the
          * two-column selection behaviour. */
-        AppNavigationView {
+        NavigationView {
             Group {
                 if library.enabled && library.current != nil {
                     sessionBody
@@ -1354,6 +1354,7 @@ struct ContentView: View {
             .onReceive(ShortcutRouter.shared.$pendingExe) { _ in launchPendingShortcut() }
             .onChange(of: library.enabled) { _ in launchPendingShortcut() }
         }
+        .navigationViewStyle(.stack)
     }
 
     /// The developer interface. Orientation comes from the view's own shape, not
@@ -1381,7 +1382,7 @@ struct ContentView: View {
             // ml1157: landscape is the desktop, edge to edge -- no status bar
             // over its top rows, and the home indicator fades out.
             .statusBarHidden(landscape)
-            .persistentSystemOverlays(landscape ? .hidden : .automatic)
+            .persistentSystemOverlays15(landscape ? .hidden : .automatic)
             // The landscape controls window re-frames to the rotated scene.
             .onChange(of: landscape) { _ in TouchControlsHost.attach() }
         }
@@ -3545,7 +3546,7 @@ struct SetupGuideView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        AppNavigationView {   /* ml658: see the note on the main body */
+        NavigationView {   /* ml658: see the note on the main body */
             List {
                 Section("Requirements") {
                     guideRow(
@@ -3587,6 +3588,7 @@ struct SetupGuideView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func guideRow(icon: String, title: String, detail: String) -> some View {
