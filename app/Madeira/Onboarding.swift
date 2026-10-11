@@ -313,17 +313,22 @@ struct OnboardingView: View {
                     .font(.title3)
                 Text("A few optional steps get you ready:").foregroundStyle(.secondary)
             }
-            let pages = model.steps
-            let offered: [LocalizedStringKey] =
-                (pages.contains(.localDevVPN) ? ["Install LocalDevVPN, which Madeira enables JIT through."] : [])
-                + (pages.contains(.jit) ? ["Choose how Madeira enables JIT."] : [])
-                + (pages.contains(.signIn) ? ["Sign in to Steam in Madeira."] : [])
-                + (pages.contains(.dockClient) ? ["Download Valve's Steam client components for Madeira Dock."] : [])
-                + (pages.contains(.wineMono) ? ["Download Wine Mono, for games built on .NET Framework."] : [])
+            let offered = offeredSetupSteps
             ForEach(offered.indices, id: \.self) { index in point(index + 1, offered[index]) }
             primary("Get started", symbol: "arrow.right") { model.next() }.padding(.top, 8)
             secondary("Skip setup") { model.skip() }
         }
+    }
+
+    private var offeredSetupSteps: [LocalizedStringKey] {
+        let pages = model.steps
+        var offered: [LocalizedStringKey] = []
+        if pages.contains(.localDevVPN) { offered.append("Install LocalDevVPN, which Madeira enables JIT through.") }
+        if pages.contains(.jit) { offered.append("Choose how Madeira enables JIT.") }
+        if pages.contains(.signIn) { offered.append("Sign in to Steam in Madeira.") }
+        if pages.contains(.dockClient) { offered.append("Download Valve's Steam client components for Madeira Dock.") }
+        if pages.contains(.wineMono) { offered.append("Download Wine Mono, for games built on .NET Framework.") }
+        return offered
     }
 
     /// LocalDevVPN first, offered only when it was missing: every JIT way reaches this
