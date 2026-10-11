@@ -246,10 +246,30 @@ jobs:
             toolchains/llvm-ios-build
           key: ${{ steps.llvm-cache.outputs.cache-primary-key }}
 
+      - name: Resolve DXMT SHA
+        id: dxmtsha
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
+        run: echo "sha=$(git ls-tree HEAD dxmt | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Restore completed DXMT
+        id: dxmt-cache
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: app/Madeira/libdxmt_combined.a
+          key: dxmt-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/dxmt-ios/build.sh', 'build/dxmt-ios/prepare-compat.py', 'build/llvm-ios/build.sh', 'build/madeira-d3d12/deps.sh', 'madeira-d3d12/src/**', 'madeira-d3d12/tests/native/msc_canary.mm', 'madeira-d3d12/third_party/metal-shader-converter/**', 'app/Madeira/d3d12/libmetalirconverter.dylib') }}
+
       - name: DXMT（真实图形静态库）
         id: dxmt
-        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' && steps.dxmt-cache.outputs.cache-hit != 'true' }}
         run: bash build/dxmt-ios/build.sh > >(tee ci-logs/dxmt.log) 2>&1
+
+      - name: Save completed DXMT before App
+        if: ${{ !cancelled() && steps.dxmt.outcome == 'success' && steps.dxmt-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: app/Madeira/libdxmt_combined.a
+          key: ${{ steps.dxmt-cache.outputs.cache-primary-key }}
 
       - name: app（xcodebuild 编译冒烟）
         run: tools/ci/build-all.sh app
