@@ -196,39 +196,48 @@ stage_app() {
   echo "======== APP BUILD OK ========"
 }
 
-# run_stage — 执行阶段并把失败证据写进 $GITHUB_STEP_SUMMARY（运行页可直接
-# 渲染，无需登录），同时 tee 全量日志到 ci-logs/<stage>.log 供 artifact 上传。
-run_stage() {
-  local s="$1"
-  local log="$LOGDIR/$s.log"
-  touch "$LOGDIR/.stamp"
-  step "stage: $s"
-  if ! "stage_$s" 2>&1 | tee "$log"; then
-    {
-      echo "## ❌ port-ci — stage \`$s\` FAILED"
-      echo
-      echo '```text'
-      tail -n 120 "$log"
-      echo '```'
-      local f
-      find "$R/build" -name '*.log' -newer "$LOGDIR/.stamp" 2>/dev/null | head -20 | while read -r f; do
-        echo
-        echo "#### ${f#"$R"/}（末 40 行）"
-        echo '```text'
-        tail -n 40 "$f"
-        echo '```'
-      done
-    } >> "${GITHUB_STEP_SUMMARY:-$LOGDIR/summary-fallback.md}"
-    tail -n 120 "$log"
-    exit 1
-  fi
-}
-
-case "${1:-}" in
-  deps)       run_stage deps ;;
-  toolchains) run_stage toolchains ;;
-  native)     run_stage native ;;
-  wine)       run_stage wine ;;
-  app)        run_stage app ;;
+# ---------- main ----------
+# 关键实现说明: 阶段函数绝不能放进 `if ! ... | tee` 这类条件/管道上下文里调用
+# —— bash 在那里会关闭 set -e，函数内部任何失败都会被静默吞掉（这正是
+# run #1–#5 各种诡异行为的根源）。这里用"普通调用 + EXIT trap 写失败摘要"。
+STAGE="${1:-}"
+case "$STAGE" in
+  deps|toolchains|native|wine|app) ;;
   *) die "用法: tools/ci/build-all.sh <deps|toolchains|native|wine|app>" ;;
 esac
+
+summary_fail() {
+  {
+    echo "## ❌ port-ci — stage \`$STAGE\` FAILED"
+    echo
+    echo '```text'
+    tail -n 150 "$LOGDIR/$STAGE.log" 2>/dev/null || true
+    echo '```'
+    local f
+    find "$R/build" "$R/FEX" "$R/wine" "$R/app" -name '*.log' \
+      -newer "$LOGDIR/.stamp" 2>/dev/null | head -20 | while read -r f; do
+      echo
+      echo "#### ${f#"$R"/}（末 40 行）"
+      echo '```text'
+      tail -n 40 "$f" 2>/dev/null
+      echo '```'
+    done
+  } >> "${GITHUB_STEP_SUMMARY:-/dev/null}" 2>/dev/null || true
+  echo "======== 失败: stage $STAGE （ci-logs/$STAGE.log 末 80 行如下） ========"
+  tail -n 80 "$LOGDIR/$STAGE.log" 2>/dev/null || true
+}
+
+cleanup() {
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    summary_fail || true
+  fi
+  exit "$rc"
+}
+trap cleanup EXIT
+
+touch "$LOGDIR/.stamp"
+step "stage: $STAGE （完整日志 → ci-logs/$STAGE.log）"
+"stage_$STAGE" > "$LOGDIR/$STAGE.log" 2>&1
+step "stage: $STAGE OK —— 输出如下"
+cat "$LOGDIR/$STAGE.log"
