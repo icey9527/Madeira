@@ -16,7 +16,7 @@ on:
       runner:
         description: Build host for timing comparison
         type: choice
-        default: macos-26-intel
+        default: macos-26
         options:
           - macos-26-intel
           - macos-26
@@ -40,7 +40,7 @@ env:
 jobs:
   build:
     name: Build smoke (Debug, unsigned)
-    runs-on: ${{ inputs.runner || 'macos-26-intel' }}
+    runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 240
     defaults:
       run:
@@ -63,7 +63,7 @@ jobs:
 
       - name: Record runner hardware
         run: |
-          echo "Runner: ${{ inputs.runner || 'macos-26-intel' }} ($RUNNER_ARCH)"
+          echo "Runner: ${{ inputs.runner || 'macos-26' }} ($RUNNER_ARCH)"
           uname -m
           sysctl hw.ncpu hw.memsize
 
@@ -118,18 +118,37 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
-          key: llvm-mingw-20260421-${{ runner.arch }}
+          key: llvm-mingw-20260421-macos-universal
+          restore-keys: |
+            llvm-mingw-20260421-X64
+            llvm-mingw-20260421-ARM64
+
+      - name: Restore Homebrew downloads
+        id: brew-cache
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: brew-downloads-macos26-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: brew-downloads-macos26-${{ runner.arch }}-
 
       - name: deps（brew / llvm-mingw / VC++ 运行时 / freetype 源码）
         id: deps
         run: tools/ci/build-all.sh deps
+
+      - name: Save Homebrew downloads before native build
+        if: success() && env.APP_ONLY != '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: ${{ steps.brew-cache.outputs.cache-primary-key }}
 
       - name: Save downloaded llvm-mingw before native build
         if: success() && env.APP_ONLY != '1'
         uses: actions/cache/save@v4
         with:
           path: toolchains/llvm-mingw-20260421-ucrt-macos-universal
-          key: llvm-mingw-20260421-${{ runner.arch }}
+          key: llvm-mingw-20260421-macos-universal
 
       - name: toolchains（GnuTLS / FFmpeg / freetype）
         run: tools/ci/build-all.sh toolchains
@@ -148,9 +167,24 @@ jobs:
             app/Madeira/libavutil.a
           key: ${{ steps.toolchains-cache.outputs.cache-primary-key }}
 
+      - name: Restore FEX incremental build
+        id: fex-build-cache
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: FEX/build-ios
+          key: fex-build-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/fex-ios/build.sh') }}
+
       - name: native（FEXCore）
         id: native
         run: tools/ci/build-all.sh native
+
+      - name: Save completed FEX build before Wine
+        if: success() && env.APP_ONLY != '1' && steps.fex-build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: FEX/build-ios
+          key: ${{ steps.fex-build-cache.outputs.cache-primary-key }}
 
       - name: Save FEX compilation cache before Wine
         if: success() && env.APP_ONLY != '1'
@@ -229,7 +263,8 @@ jobs:
             toolchains/llvm-project
             toolchains/llvm-host-build
             toolchains/llvm-ios-build
-          key: llvm15-macos26-${{ runner.arch }}-ios15.6-${{ hashFiles('build/llvm-ios/build.sh') }}
+          key: llvm15-macos26-${{ runner.arch }}-ios15.6-${{ hashFiles('build/llvm-ios/build.sh') }}-${{ steps.deps.outputs.xcode }}
+          restore-keys: llvm15-macos26-${{ runner.arch }}-ios15.6-${{ hashFiles('build/llvm-ios/build.sh') }}
 
       - name: LLVM for DXMT（host tablegen + iOS shader libraries）
         id: llvm
@@ -271,13 +306,35 @@ jobs:
           path: app/Madeira/libdxmt_combined.a
           key: ${{ steps.dxmt-cache.outputs.cache-primary-key }}
 
+      - name: Restore App incremental build
+        id: app-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ci-DD/Madeira-DD/Build
+            ci-DD/Madeira-DD/ModuleCache.noindex
+            ci-DD/Madeira-DD/SDKStatCaches.noindex
+          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-
+
       - name: app（xcodebuild 编译冒烟）
+        id: app
         run: tools/ci/build-all.sh app
+
+      - name: Save App incremental build
+        if: ${{ !cancelled() && (steps.app.outcome == 'success' || steps.app.outcome == 'failure') }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ci-DD/Madeira-DD/Build
+            ci-DD/Madeira-DD/ModuleCache.noindex
+            ci-DD/Madeira-DD/SDKStatCaches.noindex
+          key: ${{ steps.app-cache.outputs.cache-primary-key }}
 
       - name: Package IPA（存在 Madeira.app 时才打包）
         if: success() && env.APP_ONLY != '1'
         run: |
-          DD="${RUNNER_TEMP:-$GITHUB_WORKSPACE/ci-DD}/Madeira-DD"
+          DD="$GITHUB_WORKSPACE/ci-DD/Madeira-DD"
           APP="$DD/Build/Products/Debug-iphoneos/Madeira.app"
           if [ -x "$APP/Madeira" ]; then
             mkdir -p ipa/Payload

@@ -111,8 +111,13 @@ stage_deps() {
   echo "bison: $(bison --version 2>/dev/null | head -1)（必须 >= 3.0，且来自 brew 而非系统 2.3）"
   echo "flex: $(flex --version 2>/dev/null | head -1)"
 
-  step "Metal 工具链下载（Xcode 26 拆分为独立组件；App 的 .metal 编译必需）"
-  tic; xcodebuild -downloadComponent MetalToolchain; toc "deps:metal-toolchain"
+  step "Metal 工具链准备（Xcode 26 拆分为独立组件；App 的 .metal 编译必需）"
+  if xcrun --sdk iphoneos metal --version >/dev/null 2>&1; then
+    echo "Metal 工具链已可用，跳过下载"
+  else
+    tic; xcodebuild -downloadComponent MetalToolchain; toc "deps:metal-toolchain"
+    xcrun --sdk iphoneos metal --version
+  fi
 
   step "brew 工具 (bison / flex / sevenzip / ccache)"
   if [ "$APP_ONLY" = 1 ]; then
@@ -321,6 +326,7 @@ PYEOF
 
   step "FEXCore (build/fex-ios, cmake iOS)"
   bash build/fex-ios/build.sh
+  ccache --show-stats
 }
 
 wine_host_command() {
@@ -440,7 +446,7 @@ stage_app() {
     [ -s app/Madeira/libmadeira_rppairing.a ] || die "真实配对静态库缺失"
   fi
 
-  DD="${RUNNER_TEMP:-$R/ci-DD}/Madeira-DD"
+  DD="$R/ci-DD/Madeira-DD"
   step "xcodebuild 编译冒烟 (Debug, 未签名, DerivedData=$DD)"
   rc=0
   tic
