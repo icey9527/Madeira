@@ -379,7 +379,7 @@ jobs:
             [ ! -e "$APP/Madeira.debug.dylib" ] || { echo "::error::安装包仍包含拆分的主程序 debug dylib"; exit 1; }
             codesign --force --sign - --timestamp=none --generate-entitlement-der \
               --entitlements app/Madeira/Madeira.entitlements "$APP/Madeira"
-            codesign --display --entitlements - "$APP/Madeira" > ci-logs/nightly-main-entitlements.plist
+            codesign --display --entitlements :- "$APP/Madeira" > ci-logs/nightly-main-entitlements.plist
             python3 - <<'PY'
           import plistlib
           from pathlib import Path
