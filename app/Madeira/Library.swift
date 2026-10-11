@@ -4373,6 +4373,12 @@ enum EndedSessionSurface {
 /// iOS 15.6 兼容的空状态视图：替代 ContentUnavailableView（iOS 17+）。
 /// 参数标签与 ContentUnavailableView 一致，调用点只需换类型名。
 struct EmptyStateView: View {
+    init(_ title: String, systemImage: String, description: Text? = nil) {
+        self.title = title
+        self.systemImage = systemImage
+        self.description = description
+    }
+
     let title: String
     let systemImage: String
     var description: Text? = nil
@@ -4405,4 +4411,39 @@ struct AppNavigationView<Content: View>: View {
         NavigationView { content() }
             .navigationViewStyle(.stack)
     }
+}
+
+/// iOS 15 兼容：LabeledContent（iOS 16+）——Form/Section 里的左右布局行。
+/// 参数形式与 LabeledContent 对齐（title + value / title + content），调用点只换类型名。
+struct LabeledContent15<Content: View>: View {
+    let titleKey: String
+    @ViewBuilder var content: () -> Content
+
+    init(_ titleKey: String, @ViewBuilder content: @escaping () -> Content) {
+        self.titleKey = titleKey
+        self.content = content
+    }
+
+    init(_ titleKey: String, value: String) where Content == Text {
+        self.init(titleKey) { Text(value).foregroundStyle(.secondary) }
+    }
+
+    var body: some View {
+        HStack {
+            Text(titleKey)
+            Spacer()
+            content()
+        }
+    }
+}
+
+/// iOS 15 兼容：ShareLink（iOS 16+）→ UIActivityViewController 包装。
+struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

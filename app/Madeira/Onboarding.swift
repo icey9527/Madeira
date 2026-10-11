@@ -200,6 +200,7 @@ struct OnboardingView: View {
     @State private var jitPath: JITSetupPath?
     /// Asked again whenever Madeira comes back to the front (from the App Store, say).
     @State private var localDevVPNInstalled = LocalDevVPN.isInstalled
+    @State private var sharingShortcut = false
     @Environment(\.scenePhase) private var scenePhase
 
     enum JITSetupPath: String {
@@ -555,9 +556,17 @@ struct OnboardingView: View {
             }
             .buttonStyle(.bordered).controlSize(.large)
             if let url = JITShortcutFile.url {
-                ShareLink(item: url) {
+                // Phase 2 (iOS 15.6): ShareLink（16+）→ UIActivityViewController sheet
+                Button {
+                    sharingShortcut = true
+                } label: {
                     Text("No internet connection? Add local copy, then choose the Shortcuts app in the share sheet that pops up.")
                         .font(.footnote).frame(maxWidth: .infinity)
+                }
+                .sheet(isPresented: $sharingShortcut) {
+                    if let url = JITShortcutFile.url {
+                        ActivityShareSheet(items: [url])
+                    }
                 }
             }
             Toggle("Use it for JIT", isOn: $shortcut.enabled)
@@ -695,7 +704,7 @@ struct SteamSettingsSection: View {
     var body: some View {
         Section {
             if let name = signIn.accountName {
-                LabeledContent("Signed in as", value: name)
+                LabeledContent15("Signed in as", value: name)
                 Button("Sign out of Steam", role: .destructive) { confirmSignOut = true }
             } else {
                 Button { open(.steamSignIn) } label: { Label("Sign in to Steam", systemImage: "person.crop.circle.badge.plus") }

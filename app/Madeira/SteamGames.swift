@@ -899,7 +899,7 @@ struct SteamGameSheet: View {
                         }
                     }
                     Section {
-                        if let freeSpace { LabeledContent("Free space on this device", value: formatBytes(freeSpace)) }
+                        if let freeSpace { LabeledContent15("Free space on this device", value: formatBytes(freeSpace)) }
                         Text(SteamGameSheet.downloadNote)
                             .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -917,7 +917,8 @@ struct SteamGameSheet: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task(id: steam.downloads[appID]?.state) {
                 partial = steam.hasPartialDownload(appID)
-                let values = try? URL.documentsDirectory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+                let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            let values = try? docs?.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
                 freeSpace = values?.volumeAvailableCapacityForImportantUsage
             }
             .confirmationDialog("Cancel this download? Downloaded files are deleted.", isPresented: $confirmCancel, titleVisibility: .visible) {
@@ -1132,10 +1133,10 @@ struct SteamCloudSection: View {
                 Label("In sync", systemImage: "checkmark.icloud").foregroundStyle(.secondary)
             } else {
                 // One-sided leftovers: a file deleted on one side, or automatic sync turned off.
-                LabeledContent("Not synced", value: Self.saves(waiting))
+                LabeledContent15("Not synced", value: Self.saves(waiting))
             }
         }
-        if same > 0 { LabeledContent("Same on both", value: "\(same)") }
+        if same > 0 { LabeledContent15("Same on both", value: "\(same)") }
         if let problem = state.problem {
             Text(problem).font(.callout).foregroundStyle(.orange)
         }
@@ -1187,7 +1188,7 @@ struct SteamEntrySection: View {
             if direct {
                 // The game's own program, from Steam's launch configuration or chosen here.
                 if resolving && entry.steamProgram == nil {
-                    LabeledContent("Program") { ProgressView() }
+                    LabeledContent15("Program") { ProgressView() }
                 } else if programs.isEmpty && entry.steamProgram == nil {
                     Text("No Windows program was found in this game's install folder.")
                         .font(.caption).foregroundStyle(.orange)
@@ -1195,7 +1196,7 @@ struct SteamEntrySection: View {
                     Picker("Program", selection: Binding(get: { entry.steamProgram ?? "" }, set: { pick($0) })) {
                         if entry.steamProgram == nil { Text("Choose…").tag("") }
                         ForEach(pickerPrograms, id: \.self) { Text($0).tag($0) }
-                    }.pickerStyle(.navigationLink)
+                    }
                     if entry.steamProgramSource == "steam" {
                         if (entry.steamProgramArguments ?? "").isEmpty {
                             Text("From Steam's launch configuration for this game.").font(.caption).foregroundStyle(.secondary)
@@ -1235,8 +1236,8 @@ struct SteamEntrySection: View {
                 Text("Checks installed content and downloads missing or changed files from the current Steam build.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            LabeledContent("App ID", value: String(appID))
-            if let freeSpace { LabeledContent("Free space on this device", value: formatBytes(freeSpace)) }
+            LabeledContent15("App ID", value: String(appID))
+            if let freeSpace { LabeledContent15("Free space on this device", value: formatBytes(freeSpace)) }
             if let status = dock.status {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Last Dock result").font(.caption).foregroundStyle(.secondary)

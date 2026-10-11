@@ -425,7 +425,7 @@ struct WineMonoSettingsSection: View {
 
     var body: some View {
         Section {
-            LabeledContent("Wine Mono", value: mono.status)
+            LabeledContent15("Wine Mono", value: mono.status)
             if case .downloading(let f) = mono.phase { ProgressView(value: f) }
             if case .installing(let f) = mono.phase { ProgressView(value: f) }
             if let error = mono.error {
