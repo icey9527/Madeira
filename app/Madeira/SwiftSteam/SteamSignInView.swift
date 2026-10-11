@@ -20,7 +20,9 @@ struct SteamSignInView: View {
     private enum Field { case account, password, code }
 
     var body: some View {
-        NavigationStack {
+        // Phase 2 (iOS 15.6): NavigationStack（16+）→ NavigationView；
+        // .navigationViewStyle(.stack) 防止 iPad 上默认的双栏分栏布局。
+        NavigationView {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
@@ -70,11 +72,17 @@ struct SteamSignInView: View {
             .onChange(of: steam.guardPrompt) { prompt in if prompt?.codeType != nil { focus = .code } }
             .onDisappear { if !steam.signedIn { steam.cancelSignIn() } }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func signedInSection(_ name: String) -> some View {
         Section {
-            LabeledContent("Account", value: name)
+            // Phase 2 (iOS 15.6): LabeledContent（16+）→ 等价的左右布局行
+            HStack {
+                Text("Account")
+                Spacer()
+                Text(name).foregroundStyle(.secondary)
+            }
             Button("Sign out", role: .destructive) { steam.signOut() }
         } footer: {
             Text("Signing out removes the token from this device's Keychain.")
