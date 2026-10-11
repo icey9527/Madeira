@@ -111,6 +111,38 @@ jobs:
       - name: app（xcodebuild 编译冒烟）
         run: tools/ci/build-all.sh app
 
+      - name: Build standalone JIT probe（iOS 15.6 / TrollStore）
+        if: env.APP_ONLY == '1'
+        run: bash tools/ci/build-jit-probe.sh > >(tee ci-logs/jit-probe-build.log) 2>&1
+
+      - name: Upload JIT probe
+        if: success() && env.APP_ONLY == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Madeira-JIT-Probe
+          path: ipa/Madeira-JIT-Probe.ipa
+          if-no-files-found: error
+
+      - name: Publish JIT probe pre-release
+        if: success() && env.APP_ONLY == '1'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jit-probe
+          target_commitish: ${{ github.sha }}
+          name: Madeira JIT Probe（15.6 真机实验）
+          body: |
+            独立 JIT 诊断工具，不运行游戏，不是 Madeira 完整版。
+            用 TrollStore 安装 Madeira-JIT-Probe.ipa，打开后点击运行测试。
+            预期两次返回值分别为 42、43。点击“分享日志”导出 jit-probe.log。
+            若测试时退出，重新打开后先分享日志；也可从“文件”App 中导出。
+            仅使用现有 JITAllocator 双映射，不调用调试器 BRK 协议。
+            PASS 只证明这个测试包的双映射代码执行可用，完整 App 仍需移植原生链。
+            构建提交：${{ github.sha }}
+          prerelease: true
+          draft: false
+          fail_on_unmatched_files: true
+          files: ipa/Madeira-JIT-Probe.ipa
+
       - name: Package IPA（存在 Madeira.app 时才打包）
         if: success() && env.APP_ONLY != '1'
         run: |
