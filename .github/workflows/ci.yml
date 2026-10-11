@@ -12,6 +12,14 @@ on:
   push:
     branches: [port/ios15.6]
   workflow_dispatch:
+    inputs:
+      runner:
+        description: Build host for timing comparison
+        type: choice
+        default: macos-26-intel
+        options:
+          - macos-26-intel
+          - macos-26
 
 concurrency:
   group: port-ci-${{ github.ref }}
@@ -32,10 +40,7 @@ env:
 jobs:
   build:
     name: Build smoke (Debug, unsigned)
-    # 2026-10-11 用户决策：A/B 实测 Intel runner（4 核 / 14GB RAM，标准规格）
-    # 与 M1（3 核 / 7GB）的编译耗时。两轮的 deps 阶段都会记录
-    # Xcode/clang/cmake/bison 版本，注意对比镜像差异。
-    runs-on: macos-26-intel
+    runs-on: ${{ inputs.runner || 'macos-26-intel' }}
     timeout-minutes: 240
     defaults:
       run:
@@ -55,6 +60,12 @@ jobs:
             refs/heads/port/ios15.6) echo "分支正确: $GITHUB_REF" ;;
             *) echo "::error::CI 只允许在 port/ios15.6 分支运行（当前 $GITHUB_REF），不要拿原版分支跑构建"; exit 1 ;;
           esac
+
+      - name: Record runner hardware
+        run: |
+          echo "Runner: ${{ inputs.runner || 'macos-26-intel' }} ($RUNNER_ARCH)"
+          uname -m
+          sysctl hw.ncpu hw.memsize
 
       - name: Cache toolchains（llvm-mingw / gnutls / ffmpeg / freetype 产物）
         id: toolchains-cache
@@ -78,8 +89,10 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-macos26-v1-${{ hashFiles('build/fex-ios/build.sh') }}-${{ github.run_id }}
-          restore-keys: ccache-macos26-v1-
+          key: ccache-macos26-v2-${{ runner.arch }}-${{ hashFiles('build/fex-ios/build.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-macos26-v2-${{ runner.arch }}-
+            ${{ runner.arch == 'X64' && format('ccache-macos26-v1-{0}-', hashFiles('build/fex-ios/build.sh')) || 'ccache-macos26-ARM64-v1-' }}
 
       - name: Cache VC++ 运行时 DLL（12 个，内容静态，静态 key）
         if: env.APP_ONLY != '1'
@@ -98,7 +111,7 @@ jobs:
           path: |
             FEX
             .git/modules/FEX
-          key: fex-submodule-${{ steps.fexsha.outputs.sha }}
+          key: ${{ runner.arch == 'X64' && format('fex-submodule-{0}', steps.fexsha.outputs.sha) || format('fex-submodule-ARM64-{0}', steps.fexsha.outputs.sha) }}
 
       - name: Restore downloaded llvm-mingw
         if: env.APP_ONLY != '1'
