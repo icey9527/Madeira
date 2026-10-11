@@ -48,28 +48,37 @@ stage_deps() {
 
   step "VC++ 运行时 DLL (app/Madeira/x86_64-vcruntime)"
   if [ ! -f app/Madeira/x86_64-vcruntime/vcruntime140.dll ]; then
+    need="concrt140.dll msvcp140.dll msvcp140_1.dll msvcp140_2.dll msvcp140_atomic_wait.dll \
+msvcp140_codecvt_ids.dll vcamp140.dll vccorlib140.dll vcomp140.dll \
+vcruntime140.dll vcruntime140_1.dll vcruntime140_threads.dll"
     curl -fL --retry 3 -o /tmp/VC_redist.x64.exe "https://aka.ms/vs/17/release/vc_redist.x64.exe"
     rm -rf /tmp/vcredist && mkdir -p /tmp/vcredist
     7zz x /tmp/VC_redist.x64.exe -o/tmp/vcredist >/dev/null
-    cab="$(find /tmp/vcredist -name '*.cab' | head -1)"
-    if [ -z "$cab" ]; then
-      echo "[deps] /tmp/vcredist 内容如下（供诊断）:"
-      find /tmp/vcredist -maxdepth 5 | head -60
-      die "VC_redist.x64.exe 里没找到 CAB（微软安装器布局可能变了）"
-    fi
+    # 新版安装器解出的是 u28/u17 这类无扩展名容器，逐个再展开一层
+    for f in /tmp/vcredist/u* /tmp/vcredist/*.bin; do
+      [ -f "$f" ] || continue
+      case "$(basename "$f")" in *.exe) continue ;; esac
+      7zz x "$f" -o"/tmp/vcredist/x_$(basename "$f")" >/dev/null 2>&1 || true
+    done
     mkdir -p app/Madeira/x86_64-vcruntime
-    (cd app/Madeira/x86_64-vcruntime && 7zz x "$cab" >/dev/null)
-    # 只保留 VC 运行时需要的 12 个 DLL（见 tools/fetch-vcruntime.md）
-    find app/Madeira/x86_64-vcruntime -type f ! -name '*.dll' -delete
-    for f in app/Madeira/x86_64-vcruntime/*.dll; do
-      case "$(basename "$f")" in
-        concrt140.dll|msvcp140*.dll|vcamp140.dll|vccorlib140.dll|vcomp140.dll|vcruntime140*.dll) ;;
-        *) rm -f "$f" ;;
-      esac
+    # 全局按文件名收 12 个 DLL（布局再变也能找到）
+    for n in $need; do
+      src="$(find /tmp/vcredist -name "$n" -type f | head -1)"
+      [ -n "$src" ] && cp "$src" app/Madeira/x86_64-vcruntime/
     done
-    for f in vcruntime140.dll msvcp140.dll concrt140.dll vccorlib140.dll; do
-      [ -f "app/Madeira/x86_64-vcruntime/$f" ] || die "缺 $f（提取结果与预期不符）"
+    miss=""
+    for n in $need; do
+      [ -f "app/Madeira/x86_64-vcruntime/$n" ] || miss="$miss $n"
     done
+    if [ -n "$miss" ]; then
+      # 编译冒烟不需要这些 DLL（它们只是游戏的运行时资源，不参与链接），
+      # 提取不全就放占位目录让构建继续；真实打包（Phase 4）再按
+      # tools/fetch-vcruntime.md 补齐。
+      echo "[deps] 警告: VC 运行时提取不全（缺:$miss）—— 用占位目录继续，CI 产物不含 VC 运行时"
+      rm -f app/Madeira/x86_64-vcruntime/*.dll
+      printf 'CI compile-smoke placeholder — real VC++ runtime DLLs NOT bundled.\nObtain them per tools/fetch-vcruntime.md for real packaging.\n' \
+        > app/Madeira/x86_64-vcruntime/CI-PLACEHOLDER.txt
+    fi
     ls app/Madeira/x86_64-vcruntime
   fi
 
