@@ -102,6 +102,9 @@ stage_deps() {
   step "构建环境版本记录（image 漂移时用于区分环境问题/代码问题）"
   sw_vers
   xcodebuild -version
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    echo "xcode=$(xcodebuild -version | tr '\n' '-')" >> "$GITHUB_OUTPUT"
+  fi
   echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null)"
   echo "clang: $(clang --version | head -1)"
   echo "cmake: $(cmake --version | head -1)"
@@ -235,6 +238,10 @@ stage_native() {
   else
     # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
     tic; git submodule update --init --depth 1 --jobs "$NPROC" -- FEX wine dxmt madeira-dock; toc "native:submodule-clone"
+    tic; git -C dxmt submodule update --init --depth 1 --jobs "$NPROC"; toc "native:dxmt-submodule-clone"
+    for header in d3d9.h d3d11.h d3dcommon.h dxgi.h; do
+      [ -s "dxmt/include/native/directx/$header" ] || die "DXMT 子模块缺失头文件: $header"
+    done
   fi
   # FEX 嵌套子模块: BUILD_TESTING=OFF，三个 *-tests-bins 数据仓（数百 MB）
   # 不参与构建，跳过；其余（fmt/range-v3/rpmalloc/jemalloc/vixl 等）保留。
@@ -247,6 +254,7 @@ stage_native() {
     esac
   done <<< "$fex_modules"
   git -C FEX submodule update --init --depth 1 --jobs "$NPROC" -- "${fex_paths[@]}"
+  [ -s FEX/External/fmt/include/fmt/format.h ] || die "FEX 的 pinned fmt 头文件缺失"
   echo "  磁盘余量: $(df -h / | tail -1 | awk '{print $4" free / "$2}')"
 
   if [ "$APP_ONLY" != 1 ]; then
@@ -257,6 +265,9 @@ stage_native() {
       printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
       [ "$expected" = "$actual" ] || { echo "::error::Submodule SHA mismatch: $sub"; exit 1; }
     done
+    if [ -n "${GITHUB_OUTPUT:-}" ]; then
+      echo "wine-sha=$(git -C wine rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+    fi
   fi
 
   step "Python 依赖（FEX 配置期脚本需要 packaging）"

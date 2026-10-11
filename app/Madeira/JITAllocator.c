@@ -908,7 +908,6 @@ unsigned long madeira_early_pool_base, madeira_early_pool_size;
 unsigned long madeira_early_intruder_base, madeira_early_intruder_size;   /* ml1135 */
 unsigned madeira_early_intruder_tag, madeira_early_intruder_prot;
 
-#ifndef MADEIRA_JIT_PROBE
 __attribute__((constructor(101), used)) static void madeira_early_va_claim(void)
 {
     const vm_address_t win = 0x140000000ul, winsz = 0x8000000ul;       /* 128MB, see ml1037 */
@@ -964,4 +963,3 @@ __attribute__((constructor(102), used)) static void madeira_metal_validation_opt
     setenv("MTL_DEBUG_LAYER_WARNING_MODE", "nslog", 1);
     setenv("CFLOG_FORCE_STDERR", "1", 1);
 }
-#endif

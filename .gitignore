@@ -52,6 +52,7 @@ build/win32u-unix/obj/
 # DXMT build artifacts
 build/dxmt-ios/obj/
 build/dxmt-ios/shader-headers/
+build/dxmt-ios/compat-src/
 build/dxmt-ios/libdxmt_unix.a
 build/dxmt-ios/libdxmt_combined.a
 

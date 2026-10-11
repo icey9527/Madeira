@@ -19,6 +19,13 @@ mkdir -p "$OBJ_DIR"
 
 [ -s "$LLVM_BUILD/lib/libLLVMPasses.a" ] || { echo "Build iOS LLVM first: bash build/llvm-ios/build.sh"; exit 1; }
 [ -s "$LLVM_BUILD/include/llvm/Config/llvm-config.h" ] || { echo "LLVM generated headers missing"; exit 1; }
+for header in d3d9.h d3d11.h dxgi.h; do
+    [ -s "$DXMT_ROOT/include/native/directx/$header" ] || { echo "Missing DXMT submodule header: $header; run git -C dxmt submodule update --init"; exit 1; }
+done
+if [ ! -s "$REPO_ROOT/FEX/External/fmt/include/fmt/format.h" ]; then
+    echo "Missing pinned fmt headers from FEX/External/fmt"
+    exit 1
+fi
 
 mkdir -p "$BUILD_DIR/shader-headers"
 for shader in air_msad air_samplepos air_tessellation; do
@@ -83,6 +90,11 @@ compile_objc() {
 
 compile_cxx() {
     local src=$1 name=$2 extra="${3:-}"
+    local relative="${src#"$DXMT_SRC/"}"
+    if [ -f "$BUILD_DIR/compat-src/$relative" ]; then
+        extra="$extra -I$(dirname "$src") -I$REPO_ROOT/FEX/External/fmt/include -DFMT_HEADER_ONLY=1"
+        src="$BUILD_DIR/compat-src/$relative"
+    fi
     # MADEIRA_ONLY=<name>: recompile one object only.
     if [ -n "${MADEIRA_ONLY:-}" ] && [ "$name" != "$MADEIRA_ONLY" ]; then return 0; fi
     printf "  %-40s " "$name"
@@ -192,6 +204,7 @@ compile_objc "$DXMT_SRC/winemetal/unix/winemetal_unix.c" winemetal_unix
 compile_objc "$DXMT_SRC/winemetal/unix/cache.c"          cache
 
 echo "=== airconv (C++ 20, needs LLVM headers) ==="
+python3 "$BUILD_DIR/prepare-compat.py" "$DXMT_SRC" "$BUILD_DIR/compat-src" "${IPHONEOS_DEPLOYMENT_TARGET:-18.0}"
 for cpp in airconv_context.cpp air_type.cpp air_signature.cpp air_operations.cpp \
            dxbc_converter.cpp dxbc_converter_gs.cpp dxbc_converter_ts.cpp \
            dxbc_converter_basicblock.cpp dxbc_converter_cfg.cpp \
@@ -316,6 +329,10 @@ echo ""
 echo "Results: $SUCCEEDED succeeded, $FAILED failed"
 if [ -n "$FAILED_FILES" ]; then
     echo "Failed:$FAILED_FILES"
+    for failed_name in $FAILED_FILES; do
+        echo "=== $failed_name ==="
+        grep -m 5 'error:' "$OBJ_DIR/$failed_name.err" || cat "$OBJ_DIR/$failed_name.err"
+    done
     echo "See .err files in $OBJ_DIR/"
     exit 1
 fi

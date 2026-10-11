@@ -92,6 +92,12 @@ cp build-pe/src/d3d11/d3d11.dll \
 # Also stages libdxmt_combined.a into app/Madeira/ on a clean build.
 ```
 
+For deployment targets below iOS 16.3, `prepare-compat.py` generates local
+copies of three airconv sources that use the pinned FEX `fmt` headers instead
+of `std::format`. This avoids importing newer libc++ formatting functions.
+The submodule sources remain unchanged; targets at or above 16.3 use them
+directly. The compatibility copies are ignored build outputs.
+
 ## What the fork changes vs upstream
 
 See `git log --oneline upstream/main..ios-port` on the `willfaust/dxmt`
