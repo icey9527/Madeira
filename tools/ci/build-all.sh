@@ -351,7 +351,7 @@ stub_all_native_libs() {
   local sd="$R/.ci-stubs"
   mkdir -p "$sd"
   printf 'int __madeira_ci_stub;\n' > "$sd/stub.c"
-  xcrun -sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.6 -c "$sd/stub.c" -o "$sd/stub.o"
+  xcrun -sdk iphoneos clang -arch arm64 -miphoneos-version-min="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}" -c "$sd/stub.c" -o "$sd/stub.o"
   local libs=(
     "FEX/build-ios/FEXCore/Source/libFEXCore.a"
     "FEX/build-ios/FEXCore/Source/libFEXCore_Base.a"
@@ -443,7 +443,7 @@ stage_app() {
   fi
   local app_minos metalfx_load
   app_minos="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP_BUILT/Info.plist")"
-  [ "$app_minos" = "${IPHONEOS_DEPLOYMENT_TARGET:-15.5}" ] || die "主 App MinimumOSVersion 与构建目标不一致，实际为 $app_minos"
+  [ "$app_minos" = "${IPHONEOS_DEPLOYMENT_TARGET:-15.0}" ] || die "主 App MinimumOSVersion 与构建目标不一致，实际为 $app_minos"
   metalfx_load="$(otool -l "$APP_BUILT/Madeira" | awk '/^[[:space:]]*cmd LC_/ { command = $2 } /name .*MetalFX.framework/ { print command }')"
   [ "$metalfx_load" = LC_LOAD_WEAK_DYLIB ] || die "MetalFX 必须弱链接，实际为 ${metalfx_load:-MISSING}"
   echo "  MetalFX: $metalfx_load"
