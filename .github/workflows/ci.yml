@@ -156,7 +156,7 @@ jobs:
         with:
           workspaces: build/rppairing-ios
           shared-key: pairing-macos26-intel-ios15.6
-          save-if: ${{ !cancelled() }}
+          save-if: 'true'
 
       - name: Pairing library（真实 iOS 静态库）
         id: pairing
