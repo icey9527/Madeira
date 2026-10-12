@@ -42,8 +42,15 @@ while IFS= read -r -d '' component; do
     if file -b "$component" | grep -q 'Mach-O'; then
         printf '\nComponent: %s\n' "${component#"$APP_BUILT/"}" >> "$LOGDIR/bundle-components.txt"
         case "$component" in
-            "$APP_BUILT/Madeira"|"$APP_BUILT/"*.dylib) role="startup inspection" ;;
             "$APP_BUILT/PlugIns/"*|"$APP_BUILT/Frameworks/StikJIT.framework/"*|"$APP_BUILT/d3d12/"*) role="on demand; minimum version may exceed ${IPHONEOS_DEPLOYMENT_TARGET:-15.6}" ;;
+            "$APP_BUILT/Madeira") role="startup inspection" ;;
+            "$APP_BUILT/"*.dylib)
+                if [ "$(dirname "$component")" = "$APP_BUILT" ]; then
+                    role="startup inspection"
+                else
+                    role="embedded; consult startup dependencies before treating as on demand"
+                fi
+                ;;
             *) role="embedded; consult startup dependencies before treating as on demand" ;;
         esac
         printf 'Role: %s\n' "$role" >> "$LOGDIR/bundle-components.txt"
