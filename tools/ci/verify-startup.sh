@@ -37,6 +37,20 @@ for symbol in _MTLSetShaderCachePath _MTLGetShaderCachePath; do
     fi
 done
 echo "Metal 私有缓存符号: weak external"
+if grep -q 'NSt3__13pmr' "$LOGDIR/startup-imports.txt"; then
+    echo "iOS 15.6 主启动链仍依赖系统 PMR 符号" >&2
+    grep 'NSt3__13pmr' "$LOGDIR/startup-imports.txt" >&2
+    exit 1
+fi
+nm -m "$APP_BUILT/Madeira" > "$LOGDIR/startup-symbols.txt"
+for symbol in __ZNSt3__13pmr15memory_resourceD2Ev __ZTINSt3__13pmr15memory_resourceE; do
+    definitions="$(awk -v symbol="$symbol" '{ for (field = 1; field <= NF; field++) if ($field == symbol && $0 !~ /\(undefined\)/) print }' "$LOGDIR/startup-symbols.txt")"
+    if [ -z "$definitions" ]; then
+        echo "主程序缺少 PMR 兼容定义: $symbol" >&2
+        exit 1
+    fi
+done
+echo "PMR 析构与类型信息: 本地定义，无系统 PMR 导入"
 : > "$LOGDIR/bundle-components.txt"
 while IFS= read -r -d '' component; do
     if file -b "$component" | grep -q 'Mach-O'; then
