@@ -3,3 +3,10 @@ app/Frameworks/StikJIT.xcframework/** -whitespace
 # 保持脚本类文件为 LF，避免 Windows autocrlf 破坏 bash 脚本（AI 协作规范，见 tools/ai-commit.sh）
 *.sh text eol=lf
 .githooks/** text eol=lf
+
+# Prebuilt upstream compatibility layers: never apply text conversion, and let
+# Git's own zlib compression keep the many similar DLLs compact.
+app/Madeira/i386-windows/** binary -text -diff -merge
+app/Madeira/aarch64-windows/** binary -text -diff -merge
+app/Madeira/arm64ec-windows/** binary -text -diff -merge
+app/Madeira/d3d12/** binary -text -diff -merge

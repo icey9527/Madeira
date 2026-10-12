@@ -356,6 +356,9 @@ jobs:
           key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh') }}-
 
+      - name: Verify committed upstream compatibility layers
+        run: python3 tools/ci/verify-upstream-compat.py app/Madeira
+
       - name: app（xcodebuild 编译冒烟）
         id: app
         run: tools/ci/build-all.sh app
@@ -431,6 +434,19 @@ jobs:
             ## 📦 下载 / Download
 
             - 👉 **[Madeira-port-nightly-unsigned.ipa](https://github.com/${{ github.repository }}/releases/download/nightly/Madeira-port-nightly-unsigned.ipa)**
+            - 🧾 **[对应源码（浏览）/ Corresponding source (tree)](https://github.com/${{ github.repository }}/tree/${{ github.sha }})**
+            - ⬇️ **[对应源码（tar.gz） / Corresponding source (tar.gz)](https://github.com/${{ github.repository }}/archive/${{ github.sha }}.tar.gz)**
+
+            **对应源码 / Corresponding source**
+
+            This unsigned IPA is built from the commit above. That commit tree
+            contains the complete corresponding source for the copyleft
+            components it ships: Madeira Dock is vendored at `madeira-dock/`,
+            the Wine and DXMT sources are pinned as submodules under `wine/` and
+            `dxmt/`, the GPL/LGPL patches are in `build/`, and the build scripts
+            here document how each binary was produced. The Windows compatibility
+            DLLs are the unmodified upstream Madeira v0.1.3 binaries and their
+            upstream source is the `willfaust/Madeira` v0.1.3 tree.
 
             ⚠️ **未签名 IPA**：需用 TrollStore / SideStore / AltStore / Sideloadly
             安装。当前优先验证 iPadOS 15.6 上的 UI 启动；游戏兼容性尚未验收。

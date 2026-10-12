@@ -159,14 +159,14 @@ app/Madeira/licenses/LICENSE-MADEIRA-GPL-3.0.txt
 app/Madeira/licenses/LICENSE-MADEIRA-EXCEPTION.txt
 madeira-d3d12/tests/offline/sm51/
 
-# The i386 farm (32-bit Wine + DXMT DLLs) is built from the pinned submodules by
-# build/wine-i386/build.sh (docs/WOW64.md section 9); it is not committed.
-app/Madeira/i386-windows/*
-!app/Madeira/i386-windows/.gitkeep
-
-# Madeira Dock: built from madeira-dock by build/madeira-dock/build.sh
-app/Madeira/arm64ec-windows/dockhost.exe
-app/Madeira/arm64ec-windows/dock-notices.txt
+# The prebuilt Windows-side compatibility layers are committed, taken
+# verbatim from the pinned upstream Madeira v0.1.3 IPA.  CI and local builds
+# consume these files directly; do not rebuild them with build/wine-i386.
+#   app/Madeira/i386-windows/
+#   app/Madeira/aarch64-windows/
+#   app/Madeira/arm64ec-windows/
+#   app/Madeira/d3d12/
+# Verify them with tools/ci/verify-upstream-compat.py before packaging.
 
 # CI (tools/ci/build-all.sh) 日志
 ci-logs/
@@ -176,3 +176,7 @@ ci-logs/
 
 # CI app-only 空桩临时目录
 .ci-stubs/
+
+# Python bytecode
+__pycache__/
+*.pyc

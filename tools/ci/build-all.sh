@@ -242,7 +242,7 @@ stage_native() {
     tic; git submodule update --init --depth 1 --jobs "$NPROC" -- FEX; toc "native:fex-clone"
   else
     # 主仓库子模块: pinned SHA 均为各分支 HEAD（2026-10-11 核实），--depth 1 可用。
-    tic; git submodule update --init --depth 1 --jobs "$NPROC" -- FEX wine dxmt madeira-dock; toc "native:submodule-clone"
+    tic; git submodule update --init --depth 1 --jobs "$NPROC" -- FEX wine dxmt; toc "native:submodule-clone"
     tic; git -C dxmt submodule update --init --depth 1 --jobs "$NPROC"; toc "native:dxmt-submodule-clone"
     for header in d3d9.h d3d11.h d3dcommon.h dxgi.h; do
       [ -s "dxmt/include/native/directx/$header" ] || die "DXMT 子模块缺失头文件: $header"
@@ -264,7 +264,7 @@ stage_native() {
 
   if [ "$APP_ONLY" != 1 ]; then
     step "子模块 SHA 校验（gitlink 必须与实际检出一致）"
-    for sub in FEX wine dxmt madeira-dock; do
+    for sub in FEX wine dxmt; do
       expected="$(git ls-tree HEAD "$sub" | awk '{print $3}')"
       actual="$(git -C "$sub" rev-parse HEAD)"
       printf '  %-14s expected=%s actual=%s\n' "$sub" "${expected:-MISSING}" "$actual"
