@@ -98,6 +98,12 @@ of `std::format`. This avoids importing newer libc++ formatting functions.
 The submodule sources remain unchanged; targets at or above 16.3 use them
 directly. The compatibility copies are ignored build outputs.
 
+The generator also produces a local copy of `winemetal/unix/cache.c` with
+weak imports for the private Metal shader-cache path functions. Both functions
+must exist before either is called; otherwise the cache-path request reports
+failure and leaves the existing Metal cache configuration unchanged. This
+avoids making optional private symbols a requirement for starting the app.
+
 ## What the fork changes vs upstream
 
 See `git log --oneline upstream/main..ios-port` on the `willfaust/dxmt`

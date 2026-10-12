@@ -22,3 +22,26 @@ for relative in sources:
     compatible = compatible.replace('std::format(', 'fmt::format(')
     output.write_text(compatible, encoding='utf-8')
     print(f'iOS {sys.argv[3]} format compatibility: {relative}')
+
+relative = 'winemetal/unix/cache.c'
+source = (source_root / relative).read_text(encoding='utf-8')
+replacements = (
+    ('extern void MTLSetShaderCachePath(NSString* path);',
+     'extern void MTLSetShaderCachePath(NSString* path) __attribute__((weak_import));'),
+    ('extern NSString* MTLGetShaderCachePath();',
+     'extern NSString* MTLGetShaderCachePath() __attribute__((weak_import));'),
+    ('_WMTSetMetalShaderCachePath(void *obj) {\n  struct unixcall_setmetalcachepath *params = obj;',
+     '_WMTSetMetalShaderCachePath(void *obj) {\n  struct unixcall_setmetalcachepath *params = obj;\n'
+     '  if (!MTLSetShaderCachePath || !MTLGetShaderCachePath) {\n'
+     '    params->ret_success = 0;\n'
+     '    return 0;\n'
+     '  }'),
+)
+for original, replacement in replacements:
+    if source.count(original) != 1:
+        raise SystemExit(f'DXMT Metal cache compatibility pattern changed: {original}')
+    source = source.replace(original, replacement)
+output = output_root / relative
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(source, encoding='utf-8')
+print(f'iOS {sys.argv[3]} optional Metal cache symbols: {relative}')

@@ -664,6 +664,7 @@ final class LibraryModel: ObservableObject {
     private var file: URL { Self.documents.appendingPathComponent("madeira-library.json") }
 
     private init() {
+        madeira_startup_log("startup-v2: LibraryModel init begin")
         refreshFlag()
         if FileManager.default.fileExists(atPath: file.path) {
             do {
@@ -676,6 +677,7 @@ final class LibraryModel: ObservableObject {
             }
         }
         resetPhoneResolution()
+        madeira_startup_log("startup-v2: LibraryModel init complete")
     }
 
     /// ml1172: every new entry used to get 1408x648, a 19.5:9 phone's shape.

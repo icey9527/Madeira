@@ -34,12 +34,15 @@ final class MetalHostView: UIView {
     override class var layerClass: AnyClass { return CAMetalLayer.self }
     var metalLayer: CAMetalLayer { return layer as! CAMetalLayer }
     override init(frame: CGRect) {
+        madeira_startup_log("startup-v2: MetalHostView init begin")
         super.init(frame: frame)
         GamepadEventClaim.install(on: self)
         isUserInteractionEnabled = false   // touches fall through to SwiftUI
         backgroundColor = .black
         contentScaleFactor = UIScreen.main.scale
+        madeira_startup_log("startup-v2: Metal device creation begin")
         metalLayer.device = MTLCreateSystemDefaultDevice()
+        madeira_startup_log("startup-v2: Metal device creation complete")
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.framebufferOnly = true
         // 2026-07-03 MeloNX trick: displaySyncEnabled is macOS-public but
@@ -75,6 +78,7 @@ final class MetalHostView: UIView {
         // writer — per-layout rewrites from the app were a second writer
         // fighting it (pool churn on every SwiftUI layout pass).
         metalLayer.drawableSize = CGSize(width: 800, height: 600)
+        madeira_startup_log("startup-v2: MetalHostView init complete")
     }
     required init?(coder: NSCoder) { fatalError() }
 }
@@ -1352,20 +1356,32 @@ struct ContentView: View {
     private var lifecycleContent: some View {
         cloudContent
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                madeira_startup_log("startup-v2: lifecycle active begin")
                 library.refreshFlag()
                 if library.enabled && library.current == nil { MetalHostView.shared.isHidden = true }
+                madeira_startup_log("startup-v2: lifecycle active complete")
             }
             .onAppear {
+                madeira_startup_log("startup-v2: lifecycle appeared")
                 jit_install_trap_handler()
+                madeira_startup_log("startup-v2: trap handler installed")
                 entitlements = EntitlementStatus.check()
+                madeira_startup_log("startup-v2: entitlements checked")
                 logEntitlementStatus()
+                madeira_startup_log("startup-v2: entitlements logged")
                 logStore.log("[build] \(BuildStamp.text)")
+                madeira_startup_log("startup-v2: build logged")
                 DeviceDiagnostics.logStartup()
+                madeira_startup_log("startup-v2: device diagnostics logged")
                 DockOffline.begin()
+                madeira_startup_log("startup-v2: dock monitor started")
                 FrontendChoice.logStartup()
+                madeira_startup_log("startup-v2: frontend logged")
                 DeviceLoadDiagnostics.start()
+                madeira_startup_log("startup-v2: load diagnostics started")
                 // Madeira Dock: an unconsumed sign-in transfer from an earlier run goes.
                 if wine_process_is_running() == 0 { MadeiraDock.cleanup() }
+                madeira_startup_log("startup-v2: lifecycle startup complete")
             }
             .onReceive(NotificationCenter.default.publisher(for: SteamSignIn.didChange)) { _ in
                 if !SteamSignIn.isSignedIn { MadeiraDock.cleanup() }
