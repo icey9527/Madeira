@@ -68,13 +68,10 @@ build/d3d11-triangle/triangle.exe
 # DXMT test-suite per-test build output
 tests/dxmt/out/
 
-# Wineboot subprocesses — dormant while Phase 3+ uses a pre-seeded prefix
-# and skips wineboot. Rebuilt from the wine submodule if needed (requires
-# bison 3.x + llvm-dlltool). services.exe + rpcss.exe graduated to tracked
-# with the 2026-07-07 rpcss milestone (SCM + COM are live now).
-app/Madeira/aarch64-windows/plugplay.exe
-app/Madeira/aarch64-windows/svchost.exe
-app/Madeira/aarch64-windows/winedevice.exe
+# Wineboot subprocesses: services.exe + rpcss.exe graduated to tracked with the
+# 2026-07-07 rpcss milestone.  plugplay.exe / svchost.exe / winedevice.exe are
+# shipped prebuilt in upstream Madeira v0.1.3's IPA, so they stay committed here
+# instead of being rebuilt from the wine submodule.
 
 # Toolchains (pulled by build scripts)
 toolchains/
