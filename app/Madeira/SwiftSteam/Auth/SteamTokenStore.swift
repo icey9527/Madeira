@@ -53,7 +53,7 @@ class SteamTokenStore {
         if status == errSecSuccess {
             SteamLog.trace("Tokens saved to Keychain")
         } else {
-            SteamLog.trace("Failed to save tokens to Keychain: \(status)")
+            SteamLog.event("[steam-signin] keychain save failed status=\(status)")
         }
     }
 
@@ -69,6 +69,10 @@ class SteamTokenStore {
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status != errSecSuccess && status != errSecItemNotFound {
+            SteamLog.event("[steam-signin] keychain read failed status=\(status)")
+        }
 
         guard status == errSecSuccess,
               let data = result as? Data,

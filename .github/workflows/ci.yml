@@ -388,6 +388,9 @@ jobs:
           banned = {'dynamic-codesigning', 'com.apple.private.cs.debugger', 'com.apple.private.skip-library-validation'}
           if actual != expected or banned.intersection(actual):
               raise SystemExit('Unexpected or banned main executable entitlements')
+          application_id = 'TROLLTROLL.com.willfaust.madeora'
+          if actual.get('application-identifier') != application_id or actual.get('com.apple.developer.team-identifier') != 'TROLLTROLL' or actual.get('keychain-access-groups') != [application_id]:
+              raise SystemExit('Missing or unexpected TrollStore Keychain identity')
           print('Packaged main executable entitlements verified')
           PY
             mkdir -p ipa/Payload
