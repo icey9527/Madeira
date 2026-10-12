@@ -155,7 +155,7 @@
   "Keep the current controls?": "保留当前控件设置？",
   "Keep this device's saves": "保留此设备上的存档",
   "Keep this device's saves…": "保留此设备上的存档…",
-  "Keep this device's version of \\(Self.saves(conflicts.count))? Saves that differ replace Steam Cloud's for every device; the cloud's copies are saved first, in Files › Madeira › Steam Cloud Backups. Saves missing on this device stay missing, and Steam Cloud keeps them.": "要保留此设备上的存档版本（\\(Self.saves(conflicts.count)）吗？如果选择此项，所有设备上的 Steam Cloud 对应存档都会被替换。云端原有副本会先备份到“文件”›Madeira›Steam Cloud Backups。此设备上缺失的存档仍会保持缺失，Steam Cloud 中的副本则会保留。",
+  "Keep this device's version of \\(Self.saves(conflicts.count))? Saves that differ replace Steam Cloud's for every device; the cloud's copies are saved first, in Files › Madeira › Steam Cloud Backups. Saves missing on this device stay missing, and Steam Cloud keeps them.": "要保留此设备上的存档版本（\\(Self.saves(conflicts.count))）吗？如果选择此项，所有设备上的 Steam Cloud 对应存档都会被替换。云端原有副本会先备份到“文件”›Madeira›Steam Cloud Backups。此设备上缺失的存档仍会保持缺失，Steam Cloud 中的副本则会保留。",
   "Keyboard": "键盘",
   "Keyboard and mouse": "键盘和鼠标",
   "Keyboard and mouse: for games without controller support. The controller presses keys and moves the mouse (left stick WASD, right stick mouse, triggers click, D-pad arrows, Start Esc, Select Tab) and the game sees no controller. Change what each button does under Controller binds, here or in the in-game menu.": "适用于不支持手柄的游戏。在此模式下，手柄会模拟键盘和鼠标操作（左摇杆对应 WASD，右摇杆控制鼠标，扳机键对应点击，方向键对应箭头键，Start 对应 Esc，Select 对应 Tab），游戏不会检测到手柄。可在此处或游戏内菜单的“手柄按键映射”中更改各按键的功能。",

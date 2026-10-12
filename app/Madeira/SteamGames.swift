@@ -1122,7 +1122,7 @@ struct SteamCloudSection: View {
                     Button("取消", role: .cancel) {}
                 }
             Button("保留此设备上的存档…") { confirmDevice = true }
-                .confirmationDialog("要保留此设备上的存档版本（\(Self.saves(conflicts.count)）吗？如果选择此项，所有设备上的 Steam Cloud 对应存档都会被替换。云端原有副本会先备份到“文件”›Madeira›Steam Cloud Backups。此设备上缺失的存档仍会保持缺失，Steam Cloud 中的副本则会保留。",
+                .confirmationDialog("要保留此设备上的存档版本（\(Self.saves(conflicts.count))）吗？如果选择此项，所有设备上的 Steam Cloud 对应存档都会被替换。云端原有副本会先备份到“文件”›Madeira›Steam Cloud Backups。此设备上缺失的存档仍会保持缺失，Steam Cloud 中的副本则会保留。",
                                     isPresented: $confirmDevice, titleVisibility: .visible) {
                     Button("保留此设备上的存档", role: .destructive) { Task { await steam.resolveCloud(appID, useCloud: false) } }
                     Button("取消", role: .cancel) {}

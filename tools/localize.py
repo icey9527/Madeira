@@ -45,9 +45,64 @@ def load_catalogue(path: Path) -> dict[str, str]:
     return data
 
 
+# A Swift interpolation is "\\(" ... ")" with balanced ASCII parentheses inside.
+FULLWIDTH_PARENS = "\uFF08\uFF09"  # （ ）
+
+
+def extract_interpolations(text: str) -> tuple[list[str], str | None]:
+    """Return every \\(...) interpolation with balanced parens, or an error."""
+    out: list[str] = []
+    i = 0
+    while True:
+        start = text.find("\\(", i)
+        if start < 0:
+            return out, None
+        depth = 0
+        k = start + 1  # points at the "("
+        while k < len(text):
+            ch = text[k]
+            if ch in FULLWIDTH_PARENS:
+                return out, (
+                    "full-width parenthesis inside interpolation; "
+                    f"near {text[start:start + 40]!r}"
+                )
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    out.append(text[start : k + 1])
+                    break
+            elif ch == "\n":
+                return out, f"newline inside interpolation near {text[start:start + 40]!r}"
+            k += 1
+        else:
+            return out, f"unbalanced interpolation {text[start:start + 40]!r}"
+        i = k + 1
+
+
 def check_placeholders(original: str, translated: str) -> str | None:
-    want = re.findall(r"\\\([^)]*\)", original)
-    have = re.findall(r"\\\([^)]*\)", translated)
+    want, want_err = extract_interpolations(original)
+    have, have_err = extract_interpolations(translated)
+
+    if want_err:
+        # The extractor stops at the first unescaped quote, so a literal whose
+        # interpolation embeds a nested string (e.g. \\(a ? "" : "b")) comes
+        # back as a prefix: the tail after the last "\\(" is still an
+        # incomplete interpolation.  The replacer swaps this prefix in place, so
+        # the translation must keep the same number of interpolations and the
+        # same trailing fragment verbatim.
+        if original.count("\\(") != translated.count("\\("):
+            return f"interpolation count changed: {original.count(chr(92)+chr(40))} -> {translated.count(chr(92)+chr(40))}"
+        if original.rsplit("\\(", 1)[-1] != translated.rsplit("\\(", 1)[-1]:
+            return (
+                "trailing interpolation fragment changed: "
+                f"{original.rsplit(chr(92)+chr(40), 1)[-1]!r} -> {translated.rsplit(chr(92)+chr(40), 1)[-1]!r}"
+            )
+        return None
+
+    if have_err:
+        return f"translation is malformed: {have_err}"
     if want != have:
         return f"placeholders changed: {want} -> {have}"
     return None
