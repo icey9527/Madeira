@@ -125,6 +125,8 @@ enum StikJITHelper {
     // 0 treats JIT as ready whenever CS_DEBUGGED is set, as before, without asking whether a debugger is attached.
     private static let attachCheck = MadeiraConfig.flag("MADEIRA_JIT_ATTACH_CHECK")
 
+    static var usesTrollStore: Bool { jit_trollstore_mode() }
+
     /// JIT can serve a launch: CS_DEBUGGED is set, and either a debugger is
     /// attached to answer the pool request or this run's pool exists already.
     /// CS_DEBUGGED alone is not enough: it stays set after a debugger leaves, which
@@ -133,7 +135,7 @@ enum StikJITHelper {
     /// polls this every 2 s for the whole app run (and waitForDebugger every 0.5 s).
     static var ready: Bool {
         guard SigningStatus.current.debugged else { return false }
-        return !attachCheck || poolTaken || isDebuggerAttached()
+        return usesTrollStore || !attachCheck || poolTaken || isDebuggerAttached()
     }
 
     /// CS_DEBUGGED is set but nothing can answer a pool request: JIT has to be
@@ -151,7 +153,12 @@ enum StikJITHelper {
     static func allocatePool(poolSize requestedPoolSize: Int = 128 * 1024 * 1024) -> (rx: UnsafeMutableRawPointer, rw: UnsafeMutableRawPointer, size: Int)? {
         var poolSize = requestedPoolSize      // ml1036: may shrink to fit, see the hole census below
         poolFailure = nil
-        LogStore.shared.log("Allocating \(poolSize / 1024 / 1024)MB JIT pool via debugger...")
+        LogStore.shared.log("Allocating \(poolSize / 1024 / 1024)MB JIT pool via \(usesTrollStore ? "TrollStore" : "debugger")...")
+
+        if usesTrollStore && !SigningStatus.current.debugged {
+            poolFailure = "Close Madeira and use Open with JIT in TrollStore, then try again."
+            return nil
+        }
 
         let debuggerAttached = isDebuggerAttached()
         LogStore.shared.log("[jit-debugger] attached=\(debuggerAttached ? 1 : 0) at the pool request")
@@ -163,7 +170,7 @@ enum StikJITHelper {
         // whether a debugger is attached now. The handler cannot take a BRK away
         // from an attached debugger, which sees the exception first, so a wrong
         // reading costs nothing.
-        if !debuggerAttached && MadeiraConfig.flag("MADEIRA_JIT_TRAP_FALLBACK") {
+        if !usesTrollStore && !debuggerAttached && MadeiraConfig.flag("MADEIRA_JIT_TRAP_FALLBACK") {
             jit_arm_trap_fallback()
             LogStore.shared.log("[jit-debugger] no debugger is attached although CS_DEBUGGED is set: "
                 + "an unanswered pool request now fails the launch instead of crashing the app", level: .error)
@@ -476,6 +483,14 @@ enum StikJITHelper {
         // ml1040: the plugs existed only to steer first-fit; give the VA back.
         for (a, sz) in plugs { vm_deallocate(mach_task_self_, a, sz) }
         guard let rxPtr = rxPtrOpt else {
+            if usesTrollStore {
+                let message = requestUnanswered
+                    ? "TrollStore could not allocate executable memory. Close Madeira, use Open with JIT in TrollStore, and try again."
+                    : "TrollStore's JIT memory landed at an address Madeira cannot use. Close Madeira and try again."
+                poolFailure = message
+                LogStore.shared.log(message, level: .error)
+                return nil
+            }
             if requestUnanswered && !debuggerAttached {
                 // Nothing answered the BRK: there is no pool and no placement to
                 // re-roll, so the app stays up and says what to do.
@@ -706,7 +721,7 @@ enum StikJITHelper {
         // the UI view. Detail (kr / footprint delta) is in the jit_log lines.
         LogStore.shared.log("[no-footprint] pool applied=\(exempt)", level: exempt ? .success : .error)
 
-        LogStore.shared.log("JIT pool ready (debugger still attached).", level: .success)
+        LogStore.shared.log(usesTrollStore ? "TrollStore JIT pool ready." : "JIT pool ready (debugger still attached).", level: .success)
         poolTaken = true
 
         return (rx: rxPtr, rw: rwPtr, size: poolSize)

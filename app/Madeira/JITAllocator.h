@@ -65,6 +65,8 @@ void jit_arm_trap_fallback(void);
 // Returns false when the kernel does not report them.
 bool jit_cs_status(uint32_t *flags);
 
+bool jit_trollstore_mode(void);
+
 // The user address map [min, max) from TASK_VM_INFO: max is 0xfc0000000 (63 GB)
 // on a standard map and 0x8000000000 (512 GB) on an extended one. Returns false
 // when the kernel does not report it.

@@ -448,6 +448,48 @@ bool jit_cs_status(uint32_t *flags) {
     return true;
 }
 
+bool jit_trollstore_mode(void) {
+    if (__builtin_available(iOS 16.0, *)) return false;
+    char path[4096];
+    uint32_t length = sizeof(path);
+    if (_NSGetExecutablePath(path, &length) != 0) return false;
+    char *separator = strrchr(path, '/');
+    if (!separator) return false;
+    *separator = '\0';
+    separator = strrchr(path, '/');
+    if (!separator) return false;
+    if ((size_t)(separator - path) + sizeof("/_TrollStore") > sizeof(path)) return false;
+    memcpy(separator, "/_TrollStore", sizeof("/_TrollStore"));
+    return access(path, F_OK) == 0;
+}
+
+static void *jit_trollstore_allocate_rx(size_t size) {
+    if (!size || size > SIZE_MAX - (JIT_PAGE_SIZE - 1)) return NULL;
+    size = align_to_page(size);
+    mach_port_t task = mach_task_self();
+    mach_port_t entry = MACH_PORT_NULL;
+    memory_object_size_t entry_size = size;
+    kern_return_t result = mach_make_memory_entry_64(
+        task, &entry_size, 0,
+        MAP_MEM_NAMED_CREATE | VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE,
+        &entry, MACH_PORT_NULL);
+    if (result != KERN_SUCCESS) {
+        jit_log("[trollstore] memory entry failed: %d", result);
+        return NULL;
+    }
+    vm_address_t address = 0;
+    result = vm_map(task, &address, size, 0, VM_FLAGS_ANYWHERE, entry, 0, FALSE,
+                    VM_PROT_READ | VM_PROT_EXECUTE,
+                    VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE, VM_INHERIT_DEFAULT);
+    mach_port_deallocate(task, entry);
+    if (result != KERN_SUCCESS) {
+        jit_log("[trollstore] RX mapping failed: %d", result);
+        return NULL;
+    }
+    jit_log("[trollstore] RX mapped at %p size=%zu", (void *)address, size);
+    return (void *)address;
+}
+
 bool jit_task_map_range(uint64_t *min_address, uint64_t *max_address) {
     task_vm_info_data_t vmi;
     mach_msg_type_number_t cnt = TASK_VM_INFO_COUNT;
@@ -470,6 +512,17 @@ uint64_t jit_available_memory(void) {
 
 __attribute__((noinline, optnone))
 void *jit26_prepare_region(void *addr, size_t len) {
+    if (jit_trollstore_mode()) {
+        if (!len || !jit_check_debugged()) return NULL;
+        if (!addr) return jit_trollstore_allocate_rx(len);
+        kern_return_t result = vm_protect(mach_task_self(), (vm_address_t)addr, len,
+                                          FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+        if (result != KERN_SUCCESS) {
+            jit_log("[trollstore] RX protection failed: %d", result);
+            return NULL;
+        }
+        return addr;
+    }
     register void *x0 __asm__("x0") = addr;
     register size_t x1 __asm__("x1") = len;
     __asm__ volatile(
@@ -484,6 +537,7 @@ void *jit26_prepare_region(void *addr, size_t len) {
 
 __attribute__((noinline, optnone))
 void jit26_detach(void) {
+    if (jit_trollstore_mode()) return;
     __asm__ volatile(
         "mov x16, #0\n"
         "brk #0xf00d\n"

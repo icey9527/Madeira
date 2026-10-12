@@ -211,6 +211,16 @@ final class JITCoordinator: ObservableObject {
     }
 
     func enable(completion: @escaping (Result<Void, Error>) -> Void) {
+        if StikJITHelper.usesTrollStore {
+            if StikJITHelper.ready {
+                completion(.success(()))
+            } else {
+                let message = "Close Madeira and use Open with JIT in TrollStore, then try again."
+                error = message
+                completion(.failure(CoordinatorError.setupRequired(message)))
+            }
+            return
+        }
         guard SigningStatus.current.debuggable else {
             completion(.failure(NSError(
                 domain: "MadeiraJIT", code: 11,
