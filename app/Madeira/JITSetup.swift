@@ -531,7 +531,7 @@ enum LocalDevVPN {
             }
         }
         if JITNetworkShortcut.shared.enabled {
-            Button("Connect with \(JITNetworkShortcut.name)") {
+            Button("通过 \(JITNetworkShortcut.name) 连接") {
                 dismiss()
                 if let retry { retry() } else { JITCoordinator.shared.connectWithShortcut() }
             }
@@ -549,7 +549,7 @@ struct JITSettingsSection: View {
 
     var body: some View {
         Section {
-            Picker("JIT method", selection: $coordinator.method) {
+            Picker("JIT 方式", selection: $coordinator.method) {
                 ForEach(JITMethod.allCases) { method in
                     Text(method.title).tag(method)
                 }
@@ -557,13 +557,13 @@ struct JITSettingsSection: View {
             Button {
                 coordinator.showSetup = true
             } label: {
-                Label("JIT setup", systemImage: "bolt.badge.clock")
+                Label("JIT 设置", systemImage: "bolt.badge.clock")
             }
             if onboarding.available {
                 Button {
                     onboarding.rerun()
                 } label: {
-                    Label("Run setup again", systemImage: "wand.and.stars")
+                    Label("重新运行设置向导", systemImage: "wand.and.stars")
                 }
             }
             if coordinator.method == .automatic {
@@ -575,13 +575,13 @@ struct JITSettingsSection: View {
                     LogStore.shared.log("[jit-shortcut] add: iCloud link")
                     UIApplication.shared.open(JITShortcutFile.iCloudLink)
                 } label: {
-                    Label("Add the \(JITNetworkShortcut.name) shortcut", systemImage: "plus.square.on.square")
+                    Label("添加 \(JITNetworkShortcut.name) 快捷指令", systemImage: "plus.square.on.square")
                 }
                 // Phase 2 (iOS 15.6): ShareLink（16+）→ UIActivityViewController sheet
                 Button {
                     sharingJITShortcut = true
                 } label: {
-                    Label("No internet connection? Add local copy", systemImage: "square.and.arrow.up")
+                    Label("没有网络连接？添加本地副本", systemImage: "square.and.arrow.up")
                 }
                 .sheet(isPresented: $sharingJITShortcut) {
                     if let url = JITShortcutFile.url {
@@ -589,11 +589,11 @@ struct JITSettingsSection: View {
                     }
                 }
             }
-            Toggle("\(JITNetworkShortcut.name) shortcut", isOn: $shortcut.enabled)
+            Toggle("\(JITNetworkShortcut.name) 快捷指令", isOn: $shortcut.enabled)
         } header: {
             Text("JIT")
         } footer: {
-            Text("When LocalDevVPN can't reach this device, Enable JIT runs your \(JITNetworkShortcut.name) shortcut: it turns Cellular Data off when there's no Wi-Fi and connects LocalDevVPN, then puts both back once the game has started. Each run opens Shortcuts for a moment.")
+            Text("当 LocalDevVPN 无法连接到这台设备时，点按“启用 JIT”会运行你的 \(JITNetworkShortcut.name) 快捷指令：如果没有 Wi-Fi，会先关闭蜂窝数据并连接 LocalDevVPN；游戏启动后再恢复原设置。每次运行时都会短暂打开“快捷指令”App。")
         }
     }
 }
@@ -616,7 +616,7 @@ struct JITSetupView: View {
         AppNavigationView {
             Form {
                 Section {
-                    Picker("Method", selection: $coordinator.method) {
+                    Picker("方式", selection: $coordinator.method) {
                         ForEach(JITMethod.allCases) { method in
                             Text(method.title).tag(method)
                         }
@@ -630,9 +630,9 @@ struct JITSetupView: View {
                     LabeledContent15("Built-in helper",
                                    value: MadeiraBuiltInJIT.isAvailable ? "Available" : "Unavailable")
                 } header: {
-                    Text("JIT method")
+                    Text("JIT 方式")
                 } footer: {
-                    Text("Automatic uses StikDebug when it is installed. Madeira does not silently change methods after a failure.")
+                    Text("如果已安装 StikDebug，自动模式会使用它。失败后 Madeira 不会在未提示的情况下自动切换方式。")
                 }
 
                 if coordinator.method != .stikDebug {
@@ -645,12 +645,12 @@ struct JITSetupView: View {
                             .disabled(pairing.active)
                             OnDevicePairingPanel()
                         }
-                        Button("Import pairing file") { importing = true }
-                        Link("How to create a pairing file",
+                        Button("导入配对文件") { importing = true }
+                        Link("如何创建配对文件",
                              destination: URL(string: "https://github.com/StikDebug/StikDebug-Guide/blob/main/pairing_file.md")!)
                         Button(LocalDevVPN.actionTitle) { LocalDevVPN.open() }
                     } header: {
-                        Text("Built-in StikJIT")
+                        Text("内置 StikJIT")
                     } footer: {
                         Text(OnDevicePairing.isSupported
                              ? "Pair in Madeira or import a pairing file made on a computer, connect LocalDevVPN, then check setup. The pairing file is kept in this device's Keychain."
@@ -658,24 +658,24 @@ struct JITSetupView: View {
                     }
 
                     Section {
-                        Button("Check setup") { coordinator.prepareBuiltIn() }
+                        Button("检查设置") { coordinator.prepareBuiltIn() }
                             .disabled(coordinator.busy || !coordinator.pairingImported)
-                        Button("Enable JIT") { coordinator.enableBuiltIn() }
+                        Button("启用 JIT") { coordinator.enableBuiltIn() }
                             .disabled(coordinator.busy || !coordinator.pairingImported)
-                        Button("Reset Developer Disk Image", role: .destructive) {
+                        Button("重置开发者磁盘映像", role: .destructive) {
                             coordinator.resetDDI()
                         }.disabled(coordinator.busy)
                     }
                 } else {
                     Section {
                         if StikJITHelper.isAvailable {
-                            Button("Enable JIT with StikDebug") { coordinator.enable() { _ in } }
+                            Button("通过 StikDebug 启用 JIT") { coordinator.enable() { _ in } }
                         } else {
-                            Link("Install StikDebug",
+                            Link("安装 StikDebug",
                                  destination: URL(string: "https://github.com/StikDebug/StikDebug/releases/latest")!)
                         }
                     } footer: {
-                        Text("StikDebug needs a pairing file and an active LocalDevVPN connection. Madeira sends its own script automatically.")
+                        Text("StikDebug 需要配对文件和处于连接状态的 LocalDevVPN。Madeira 会自动发送所需脚本。")
                     }
                 }
 
@@ -693,11 +693,11 @@ struct JITSetupView: View {
                     Section { LabeledContent15("TXM/SPTM", value: txm ? "Present" : "Not present") }
                 }
             }
-            .navigationTitle("JIT setup")
+            .navigationTitle("JIT 设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { coordinator.showSetup = false; dismiss() }
+                    Button("完成") { coordinator.showSetup = false; dismiss() }
                 }
             }
         }

@@ -26,8 +26,8 @@ struct SteamSignInView: View {
             Form {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("Sign in to Steam", systemImage: "person.crop.circle.fill").font(.title2.bold())
-                        Text("Madeira keeps a Steam sign-in so it can start your Steam games with your own account.")
+                        Label("登录 Steam", systemImage: "person.crop.circle.fill").font(.title2.bold())
+                        Text("Madeira 会保留 Steam 登录状态，以便使用你的账户启动 Steam 游戏。")
                             .foregroundStyle(.secondary)
                     }.padding(.vertical, 4)
                 }
@@ -37,9 +37,9 @@ struct SteamSignInView: View {
                     guardSection(prompt)
                 } else {
                     Section {
-                        Picker("Sign-in method", selection: $method) {
-                            Text("Password").tag(SteamSignInModel.SignInMethod.password)
-                            Text("QR code").tag(SteamSignInModel.SignInMethod.qr)
+                        Picker("登录方式", selection: $method) {
+                            Text("密码").tag(SteamSignInModel.SignInMethod.password)
+                            Text("二维码").tag(SteamSignInModel.SignInMethod.qr)
                         }.pickerStyle(.segmented)
                     }
                     if method == .password { passwordSection } else { qrSection }
@@ -48,7 +48,7 @@ struct SteamSignInView: View {
                     Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                 }
                 Section {
-                    Text("Madeira signs in with Steam directly. Your password is sent only to Steam and is never stored. A sign-in token is kept in this device's Keychain until you sign out.")
+                    Text("Madeira 会直接登录 Steam。你的密码只会发送给 Steam，不会被保存。登录令牌会保存在本设备的钥匙串中，直到你退出登录。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -79,32 +79,32 @@ struct SteamSignInView: View {
         Section {
             // Phase 2 (iOS 15.6): LabeledContent（16+）→ 等价的左右布局行
             HStack {
-                Text("Account")
+                Text("账户")
                 Spacer()
                 Text(name).foregroundStyle(.secondary)
             }
-            Button("Sign out", role: .destructive) { steam.signOut() }
+            Button("退出登录", role: .destructive) { steam.signOut() }
         } footer: {
-            Text("Signing out removes the token from this device's Keychain.")
+            Text("退出登录会从本设备的钥匙串中删除该令牌。")
         }
     }
 
     private var passwordSection: some View {
         Section {
-            TextField("Steam account name", text: $account)
+            TextField("Steam 账户名称", text: $account)
                 .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                 .focused($focus, equals: .account).submitLabel(.next).onSubmit { focus = .password }
-            SecureField("Password", text: $password)
+            SecureField("密码", text: $password)
                 .textContentType(.password).focused($focus, equals: .password)
                 .submitLabel(.go).onSubmit(submit)
             Button(action: submit) {
                 HStack {
-                    Text("Sign in").fontWeight(.semibold)
+                    Text("登录").fontWeight(.semibold)
                     if steam.signInBusy { Spacer(); ProgressView() }
                 }
             }.disabled(account.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty || steam.signInBusy)
         } footer: {
-            Text("Use your Steam account name, which can differ from your email address.")
+            Text("请使用 Steam 账户名称登录；它可能与电子邮箱地址不同。")
         }
     }
 
@@ -120,14 +120,14 @@ struct SteamSignInView: View {
                 Text(type == .device
                      ? "Enter the Steam Guard code shown in the Steam app on your phone."
                      : "Enter the code Steam sent to your email" + (prompt.hint.isEmpty ? "." : " (\(prompt.hint))."))
-                TextField("Code", text: $code)
+                TextField("代码", text: $code)
                     .textContentType(.oneTimeCode).textInputAutocapitalization(.characters).autocorrectionDisabled()
                     .font(.title3.monospaced()).focused($focus, equals: .code)
                     .submitLabel(.go).onSubmit { steam.submitGuardCode(code) }
                 Button {
                     steam.submitGuardCode(code)
                 } label: {
-                    HStack { Text("Continue").fontWeight(.semibold); if steam.signInBusy { Spacer(); ProgressView() } }
+                    HStack { Text("继续").fontWeight(.semibold); if steam.signInBusy { Spacer(); ProgressView() } }
                 }.disabled(code.trimmingCharacters(in: .whitespaces).count < 5 || steam.signInBusy)
             }
             if prompt.canApprove {
@@ -139,8 +139,8 @@ struct SteamSignInView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Button("Start over", role: .cancel) { code = ""; steam.cancelSignIn() }
-        } header: { Text("Steam Guard") }
+            Button("重新开始", role: .cancel) { code = ""; steam.cancelSignIn() }
+        } header: { Text("Steam 令牌（Steam Guard）") }
     }
 
     private var qrSection: some View {
@@ -150,18 +150,18 @@ struct SteamSignInView: View {
                     .frame(maxWidth: 240).padding(12)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 14))
                     .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Steam sign-in QR code")
-                Text("On another device, open the Steam app, go to Steam Guard, and scan this code.")
+                    .accessibilityLabel("Steam 登录二维码")
+                Text("在另一台设备上打开 Steam App，进入 Steam 令牌（Steam Guard），然后扫描此二维码。")
                 if let link = steam.qrLink {
                     Button { UIApplication.shared.open(link) } label: {
-                        Label("Open in the Steam app on this device", systemImage: "arrow.up.forward.app")
+                        Label("在此设备的 Steam App 中打开", systemImage: "arrow.up.forward.app")
                     }
                 }
-                HStack(spacing: 12) { ProgressView(); Text("Waiting for approval…").foregroundStyle(.secondary) }
+                HStack(spacing: 12) { ProgressView(); Text("等待批准…").foregroundStyle(.secondary) }
             } else if steam.signInBusy {
-                HStack(spacing: 12) { ProgressView(); Text("Getting a sign-in code…").foregroundStyle(.secondary) }
+                HStack(spacing: 12) { ProgressView(); Text("正在获取登录验证码…").foregroundStyle(.secondary) }
             } else {
-                Button("Get a new code") { steam.beginQR() }
+                Button("获取新代码") { steam.beginQR() }
             }
         }
     }

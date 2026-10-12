@@ -177,3 +177,6 @@ ci-logs/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local investigation scratch (do not commit)
+.ci-tmp/

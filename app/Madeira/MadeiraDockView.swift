@@ -136,68 +136,68 @@ struct MadeiraDockView: View {
         AppNavigationView {
             Form {
                 Section {
-                    Text("Madeira Dock starts an installed Steam game through Valve's own Steam client, without the Steam desktop window. Valve's client signs in with your account and decides whether the game may run.")
+                    Text("Madeira Dock 会通过 Valve 自家的 Steam 客户端启动已安装的 Steam 游戏，无需打开 Steam 桌面窗口。Valve 客户端会登录你的账户，并判断游戏是否可以运行。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
-                Section("Steam account") {
+                Section("Steam 账户") {
                     if let name = signIn.accountName {
                         LabeledContent15("Signed in", value: name)
                     } else {
-                        Button("Sign in to Steam") { showSignIn = true }
+                        Button("登录 Steam") { showSignIn = true }
                     }
                 }
                 Section {
                     if dock.clientInstalled {
-                        Label("Valve's client components are installed", systemImage: "checkmark.circle")
+                        Label("Valve 客户端组件已安装", systemImage: "checkmark.circle")
                     } else if dock.preparing {
                         HStack(spacing: 12) { ProgressView(); Text(dock.progress).foregroundStyle(.secondary) }
                     } else {
-                        Button("Download Valve's client components (about 73 MB)") { dock.prepareClient() }
+                        Button("下载 Valve 客户端组件（约 73 MB）") { dock.prepareClient() }
                     }
-                } header: { Text("Steam client") } footer: {
-                    Text("Downloaded from Valve's update servers and checked against pinned SHA-256 sums. Existing Steam files are kept.")
+                } header: { Text("Steam 客户端") } footer: {
+                    Text("文件从 Valve 更新服务器下载，并通过固定的 SHA-256 校验值验证。现有 Steam 文件会保留。")
                 }
                 Section {
                     if dock.games.isEmpty {
-                        Text("No installed Steam games were found in the Steam library in drive_c.").foregroundStyle(.secondary)
+                        Text("在 drive_c 中的 Steam 游戏库里没有找到已安装的 Steam 游戏。").foregroundStyle(.secondary)
                     }
                     ForEach(dock.games) { game in
                         Button { start(game, dock.compactPool); dismiss() } label: {
                             HStack {
                                 Text(game.name)
                                 Spacer()
-                                if !game.installed { Text("Not fully installed").font(.caption).foregroundStyle(.secondary) }
+                                if !game.installed { Text("尚未完整安装").font(.caption).foregroundStyle(.secondary) }
                             }
                         }
                         .disabled(!game.installed || !dock.clientInstalled || !signIn.signedIn)
                     }
-                    Toggle("Smaller JIT pool (512 MB) for this launch", isOn: $dock.compactPool)
-                } header: { Text("Installed games") } footer: {
-                    Text("Games Steam's client has installed in this prefix. Only Steam's default launch option is used.")
+                    Toggle("本次启动使用较小的 JIT 内存池（512 MB）", isOn: $dock.compactPool)
+                } header: { Text("已安装的游戏") } footer: {
+                    Text("此 Wine 前缀中由 Steam 客户端安装的游戏。仅使用 Steam 默认启动选项。")
                 }
                 if !dock.installPrograms.isEmpty {
                     Section {
                         ForEach(dock.games.filter { dock.installPrograms[$0.id] != nil }) { game in
                             Picker(game.name, selection: Binding(get: { dock.installRunNext[game.id] ?? true },
                                                                  set: { dock.setRunsInstallers(game.id, $0) })) {
-                                Text("Run at next start").tag(true)
-                                Text("Skip").tag(false)
+                                Text("下次启动时运行").tag(true)
+                                Text("跳过").tag(false)
                             }
                             .pickerStyle(.menu)
                         }
-                    } header: { Text("One-time installs") } footer: {
-                        Text("Programs from a game's Steam install script, such as runtime setups, that Steam's desktop client runs before a first start. A Dock start runs the ones not yet recorded as done before Valve's client starts; the choice then changes to Skip.")
+                    } header: { Text("一次性安装项") } footer: {
+                        Text("某些游戏的 Steam 安装脚本会包含运行环境等程序，Steam 桌面客户端会在首次启动游戏前运行这些程序。通过 Dock 启动时，会先运行尚未标记为完成的程序，再启动 Valve 客户端；之后此选项会变为“跳过”。")
                     }
                 }
                 if let status = dock.status {
-                    Section("Dock status") { Text(status) }
+                    Section("Dock 状态") { Text(status) }
                 }
                 if let error = dock.error {
                     Section { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
                 }
             }
             .navigationTitle("Madeira Dock").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
             .onAppear { dock.refresh(); signIn.refresh() }
             .sheet(isPresented: $showSignIn) { SteamSignInView() }
         }

@@ -181,18 +181,18 @@ struct FPSOverlay: View {
                     // ml605 died at 4080MB against a 4096MB limit with no warning
                     // of any kind in the log, so having it on screen turns "it
                     // vanished" into "we watched it climb".
-                    Text("\(memMB)MB")
+                    Text("\(memMB) MB")
                         .foregroundColor(memColor)
                         .frame(width: 56, alignment: .trailing)
                     Text("|")
                         .foregroundColor(.secondary)
-                    Text("Present:")
+                    Text("呈现方式：")
                         .foregroundColor(.secondary)
                     Text("\(presentCount)")
                         .foregroundColor(.primary)
                     Text("|")
                         .foregroundColor(.secondary)
-                    Text("FPS:")
+                    Text("FPS：")
                         .foregroundColor(.secondary)
                     Text(String(format: "%.1f", fps))
                         .foregroundColor(fpsColor)

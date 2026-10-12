@@ -2051,8 +2051,8 @@ struct LibraryBadges: View {
     }
     private var format: some View {
         HStack(spacing: 4) {
-            if entry.bits == 32 || entry.bits == 64 { badge("\(entry.bits)-bit") }
-            if entry.isBatch { badge("Batch") }   // ml1163
+            if entry.bits == 32 || entry.bits == 64 { badge("\(entry.bits) 位") }
+            if entry.isBatch { badge("批处理") }   // ml1163
             if let api = LibraryRendererBadge.compact(entry.graphicsAPI) { badge(api) }
             if let note { badge(note) }
         }
@@ -2077,9 +2077,9 @@ struct LibraryStatus: View {
     var body: some View {
         HStack(spacing: 8) {
             badge("JIT", jit)
-            badge("Memory+", memory)
+            badge("内存+", memory)
             if jit && memory {
-                Text("Ready to play").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                Text("可以开始游戏了").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
                     .padding(.leading, 4)
             }
         }
@@ -2094,7 +2094,7 @@ struct LibraryStatus: View {
         .font(.footnote)
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background((enabled ? Color.green : Color.red).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-        .accessibilityElement(children: .ignore).accessibilityLabel("\(label): \(enabled ? "enabled" : "unavailable")")
+        .accessibilityElement(children: .ignore).accessibilityLabel("\(label)：\(enabled ? "enabled" : "unavailable")")
     }
     private func update() { jit = StikJITHelper.ready; memory = EntitlementStatus.check().increasedMemory }
 }
@@ -2336,9 +2336,9 @@ struct LibraryGroupedGames<LocalCell: View>: View {
         VStack(alignment: .leading, spacing: 24) {
             if groups.isEmpty {
                 if search.isEmpty {
-                    EmptyStateView("Make yourself at home", systemImage: "gamecontroller", description: Text("Copy a game's folder into Madeira › wine › drive_c with the Files app, then tap + and choose its .exe."))
+                    EmptyStateView("Make yourself at home", systemImage: "gamecontroller", description: Text("在“文件”App 中，将游戏文件夹复制到 Madeira › wine › drive_c，然后点按 + 并选择游戏的 .exe 文件。"))
                 } else {
-                    Text("No games match your search.").foregroundStyle(.secondary)
+                    Text("没有符合搜索条件的游戏。").foregroundStyle(.secondary)
                 }
             }
             ForEach(groups) { group in
@@ -2371,7 +2371,7 @@ struct LibraryGroupedGames<LocalCell: View>: View {
             }
         }
         .alert("Steam", isPresented: Binding(get: { steam.error != nil }, set: { if !$0 { steam.error = nil } })) {
-            Button("OK", role: .cancel) { steam.error = nil }
+            Button("好", role: .cancel) { steam.error = nil }
         } message: { Text(steam.error ?? "") }
     }
 
@@ -2473,10 +2473,10 @@ struct LibraryView: View {
         TabView(selection: Binding(get: { tab }, set: { switchTab(to: $0) })) {
             library
                 .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
-                .tabItem { Image(systemName: "square.grid.2x2.fill").accessibilityLabel("Library") }
+                .tabItem { Image(systemName: "square.grid.2x2.fill").accessibilityLabel("游戏库") }
                 .tag(0)
             settings
-                .tabItem { Image(systemName: "gearshape.fill").accessibilityLabel("Settings") }
+                .tabItem { Image(systemName: "gearshape.fill").accessibilityLabel("设置") }
                 .tag(1)
         }
         // The system search field (Liquid Glass on iOS 26) in the title's place, left
@@ -2502,7 +2502,7 @@ struct LibraryView: View {
         .alert(jitProblem == nil ? "Library" : "Couldn't Enable JIT",
                isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             if let jitProblem { jitConnectionActions(jitProblem, retry: enableJIT) { model.error = nil } }
-            Button("OK", role: .cancel) { model.error = nil }
+            Button("好", role: .cancel) { model.error = nil }
         } message: { Text(model.error ?? "") }
         .fullScreenCover(isPresented: $onboarding.presented) { OnboardingView() }
         .onAppear {
@@ -2528,30 +2528,30 @@ struct LibraryView: View {
         ToolbarItem(placement: .navigationBarTrailing) {
             if tab == 0 {
             Menu {
-                Picker("Library layout", selection: $layout) {
-                    Label("Cards", systemImage: "square.grid.2x2").tag("cards")
-                    Label("Compact cards", systemImage: "square.grid.3x3").tag("compact")
-                    Label("List", systemImage: "list.bullet").tag("list")
-                    Label("Compact list", systemImage: "list.dash").tag("compactList")
+                Picker("游戏库布局", selection: $layout) {
+                    Label("卡片", systemImage: "square.grid.2x2").tag("cards")
+                    Label("紧凑卡片", systemImage: "square.grid.3x3").tag("compact")
+                    Label("列表", systemImage: "list.bullet").tag("list")
+                    Label("紧凑列表", systemImage: "list.dash").tag("compactList")
                 }
-                Picker("Group by", selection: $group) {
-                    Label("Last played", systemImage: "clock.arrow.circlepath").tag("played")
-                    Label("Installed", systemImage: "arrow.down.circle").tag("installed")
-                    Label("Platform", systemImage: "square.stack").tag("platform")
-                    Label("None", systemImage: "square.grid.2x2").tag("none")
+                Picker("分组方式", selection: $group) {
+                    Label("上次游玩时间", systemImage: "clock.arrow.circlepath").tag("played")
+                    Label("已安装", systemImage: "arrow.down.circle").tag("installed")
+                    Label("平台", systemImage: "square.stack").tag("platform")
+                    Label("无", systemImage: "square.grid.2x2").tag("none")
                 }.pickerStyle(.menu)
-                Picker("Sort by", selection: $sort) {
-                    Label("Last played", systemImage: "clock").tag("played")
-                    Label("Name", systemImage: "textformat.abc").tag("name")
-                    Label("Recently added", systemImage: "plus").tag("added")
-                    Label("Folder size", systemImage: "internaldrive").tag("size")
+                Picker("排序方式", selection: $sort) {
+                    Label("上次游玩时间", systemImage: "clock").tag("played")
+                    Label("名称", systemImage: "textformat.abc").tag("name")
+                    Label("最近添加", systemImage: "plus").tag("added")
+                    Label("文件夹大小", systemImage: "internaldrive").tag("size")
                 }
-            } label: { Label("Library options", systemImage: "line.3.horizontal.decrease") }
+            } label: { Label("游戏库选项", systemImage: "line.3.horizontal.decrease") }
             }
         }
         ToolbarItem(placement: .navigationBarTrailing) {
             if tab == 0 {
-            Button { browser = true } label: { Label("Add executable", systemImage: "plus") }
+            Button { browser = true } label: { Label("添加可执行文件", systemImage: "plus") }
             }
         }
     }
@@ -2560,7 +2560,7 @@ struct LibraryView: View {
             if tab == 1 {
             Button(action: enableJIT) {
                 HStack(spacing: 6) {
-                    Text("Enable JIT")
+                    Text("启用 JIT")
                     Image(systemName: "bolt.fill").accessibilityHidden(true)
                 }
             }
@@ -2589,11 +2589,11 @@ struct LibraryView: View {
             }
             if settingsShow("diagnostics", "extended logging", "logging", "log") {
                 Section {
-                    Toggle("Extended logging", isOn: $input.diagnostics)
-                } header: { Text("Diagnostics") }
+                    Toggle("扩展日志", isOn: $input.diagnostics)
+                } header: { Text("诊断") }
             }
             if settingsShow("pointer", "mouse", "cursor", "touch", "trackpad", "sensitivity") {
-                Section("Pointer") { LibraryPointerSettings() }
+                Section("指针") { LibraryPointerSettings() }
             }
             if MadeiraConfig.flag("MADEIRA_RUNTIME_SETTINGS") {
                 if settingsShow("display", "refresh", "rate", "ProMotion", "120 Hz") { DisplayRateSettings() }
@@ -2608,18 +2608,18 @@ struct LibraryView: View {
             if settingsShow("saves", "backup", "restore", "save games") { SavesSection() }
             if settingsShow("appearance", "liquid metal", "metal", "glass") {
                 Section {
-                    Toggle("Liquid metal", isOn: $liquidMetal.on)
-                } header: { Text("Appearance") } footer: {
-                    Text("Flowing chrome on the bars and the Desktop button. Off, they use the system's Liquid Glass.")
+                    Toggle("液态金属", isOn: $liquidMetal.on)
+                } header: { Text("外观") } footer: {
+                    Text("为工具栏和“桌面”按钮启用流动金属质感。关闭后会使用系统的液态玻璃效果。")
                 }
             }
             if settingsShow("interface", "developer") {
                 Section {
-                    Toggle("Use developer interface", isOn: Binding(get: { developerUI }, set: { on in
+                    Toggle("使用开发者界面", isOn: Binding(get: { developerUI }, set: { on in
                         developerUI = on; FrontendChoice.choose(new: !on); restartNotice = true
                     }))
-                } header: { Text("Interface") } footer: {
-                    Text("The developer interface is Madeira's original diagnostic screen. The change applies after Madeira restarts.")
+                } header: { Text("界面") } footer: {
+                    Text("开发者界面是 Madeira 原有的诊断页面。重启 Madeira 后，更改才会生效。")
                 }
             }
             // Search: the matching options of All settings, editable here.
@@ -2638,15 +2638,15 @@ struct LibraryView: View {
                     MadeiraCredit(name: "spitefulowl", handle: "spitefulowl", role: "Wine and FEX runtime fixes, DXMT texture and memory fixes, audio, the swap tier, and library launch options")
                     MadeiraCredit(name: "meshoklv", handle: "meshoklv", role: "Controller fixes for games that ship their own XInput or need focus, touch taps that stay off the mouse, and a crash-guard fix")
                     MadeiraCredit(name: "TheHadesc", handle: "TheHadesc", role: "Madeira Dock starts for games whose Steam launch entries do not start at zero, and a touch gamepad that survives the in-game keyboard")
-                } header: { Text("Credits") } footer: {
-                    Text("Madeira is built on Wine, FEX-Emu, DXMT by Feifan He (3Shain) with the Direct3D 9 frontend by David Acevedo (dacevedo12), rpmalloc by Mattias Jansson, StikDebug, StikJIT and idevice. Thank you to everyone who contributes to these projects.")
+                } header: { Text("鸣谢") } footer: {
+                    Text("Madeira 基于 Wine、FEX-Emu、Feifan He（3Shain）开发的 DXMT（其中 Direct3D 9 前端由 David Acevedo（dacevedo12）开发）、Mattias Jansson 开发的 rpmalloc，以及 StikDebug、StikJIT 和 idevice。感谢所有为这些项目作出贡献的人。")
                 }
             }
         }
-        .alert("Restart Madeira", isPresented: $restartNotice) {
-            Button("OK", role: .cancel) {}
+        .alert("重启 Madeira", isPresented: $restartNotice) {
+            Button("好", role: .cancel) {}
         } message: {
-            Text("Close Madeira from the app switcher and open it again to switch interfaces.")
+            Text("要切换界面，请从应用切换器中彻底关闭 Madeira，然后重新打开。")
         }
         // The Settings sheets hang off the Form, never off one of its rows: a Form
         // may rebuild its rows while a sheet slides up over it, and a sheet whose
@@ -2670,7 +2670,7 @@ struct LibraryView: View {
                             // On the chrome's middle band (dark, or light in light mode), with a soft
                             // halo of the other tone for the moments a highlight passes under it.
                             let light = colorScheme == .light
-                            Label("Desktop", systemImage: "desktopcomputer")
+                            Label("桌面", systemImage: "desktopcomputer")
                                 .font(.subheadline.weight(.semibold)).foregroundStyle(light ? .black : .white)
                                 .shadow(color: (light ? Color.white : .black).opacity(0.75), radius: 2.5)
                                 .padding(.horizontal, 14).frame(minHeight: 44)
@@ -2679,7 +2679,7 @@ struct LibraryView: View {
                                 // glyphs took a tap (the plain fill's Capsule did).
                                 .contentShape(Capsule())
                         } else {
-                            Label("Desktop", systemImage: "desktopcomputer")
+                            Label("桌面", systemImage: "desktopcomputer")
                                 .font(.subheadline.weight(.medium)).padding(.horizontal, 14).frame(minHeight: 44)
                                 .background(Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
                         }
@@ -2730,7 +2730,7 @@ struct LibraryView: View {
                                           part: steamFirst ? .notInstalled : .all, open: { selected = $0 })
                     }
                 } else if model.entries.filter({ $0.desktop != true && $0.steamAppID == nil }).isEmpty {
-                    EmptyStateView("Make yourself at home", systemImage: "gamecontroller", description: Text("Copy a game's folder into Madeira › wine › drive_c with the Files app, then tap + and choose its .exe."))
+                    EmptyStateView("Make yourself at home", systemImage: "gamecontroller", description: Text("在“文件”App 中，将游戏文件夹复制到 Madeira › wine › drive_c，然后点按 + 并选择游戏的 .exe 文件。"))
                 } else {
                     cells(entries, width: viewport.size.width)
                 }
@@ -2858,9 +2858,9 @@ struct ExecutableBrowser: View {
                     }
                 }
             }
-            if files.isEmpty && error == nil { Text("No executables here. Copy files into Madeira/wine/drive_c using Files.").foregroundStyle(.secondary) }
+            if files.isEmpty && error == nil { Text("这里没有可执行文件。请使用“文件”App 将文件复制到 Madeira/wine/drive_c。").foregroundStyle(.secondary) }
         }.navigationTitle(folder.lastPathComponent)
-        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } } }
         .task {
             do {
                 // ml1163: .bat and .cmd files are listed too (they run through cmd.exe).
@@ -2944,7 +2944,7 @@ struct LibraryDetail: View {
                             if let appID = entry.steamAppID, let summary = SteamOwnedLibrary.shared.playtime[appID]?.summary {
                                 Text(summary).font(.subheadline).foregroundStyle(.secondary)
                             } else if let played = entry.lastPlayed {
-                                Text("Last played \(played.formatted(.relative(presentation: .named)))").font(.subheadline).foregroundStyle(.secondary)
+                                Text("上次游玩：\(played.formatted(.relative(presentation: .named)))").font(.subheadline).foregroundStyle(.secondary)
                             }
                             // A game Valve's client starts (Madeira Dock): can it start without a connection?
                             if DockOffline.enabled, let appID = entry.steamAppID, !entry.startsSteamGameDirectly {
@@ -2955,9 +2955,9 @@ struct LibraryDetail: View {
                                     // Enabling JIT can take seconds with nothing else on screen.
                                     if model.startingJIT == entry.id {
                                         ProgressView().tint(.white)
-                                        Text("Starting JIT").fontWeight(.semibold)
+                                        Text("正在启动 JIT").fontWeight(.semibold)
                                     } else {
-                                        Image(systemName: "play.fill"); Text("Play").fontWeight(.semibold)
+                                        Image(systemName: "play.fill"); Text("游玩").fontWeight(.semibold)
                                     }
                                 }.frame(minWidth: 100, minHeight: 30)
                             }
@@ -2972,10 +2972,10 @@ struct LibraryDetail: View {
                                 }.clipped()
                         )
                 }
-                if entry.desktop != true { Section("Library details") {
-                    TextField("Title", text: $entry.title)
-                    Button { findCover = true } label: { Label("Find on Steam", systemImage: "magnifyingglass") }
-                    Button { importCover = true } label: { Label("Choose cover image", systemImage: "photo") }
+                if entry.desktop != true { Section("游戏库详情") {
+                    TextField("标题", text: $entry.title)
+                    Button { findCover = true } label: { Label("在 Steam 中查找", systemImage: "magnifyingglass") }
+                    Button { importCover = true } label: { Label("选择封面图片", systemImage: "photo") }
                     if entry.coverFile != nil { Button((entry.steamAppID ?? entry.steamID) != nil ? "Use Steam artwork" : "Remove cover image") { entry.coverFile = nil } }
                 } }
                 // A Steam game's cloud saves, then how it starts, under its library
@@ -2989,7 +2989,7 @@ struct LibraryDetail: View {
                     // ml1172: this device's choices (ResolutionChoices), grouped.
                     let groups = ResolutionChoices.groups()
                     let metalFX = ResolutionChoices.metalFX(in: groups)
-                    Picker("Resolution", selection: $entry.resolution) {
+                    Picker("分辨率", selection: $entry.resolution) {
                         ForEach(groups, id: \.title) { group in
                             Section(group.title) {
                                 ForEach(group.choices, id: \.value) { Text($0.label).tag($0.value) }
@@ -3004,50 +3004,50 @@ struct LibraryDetail: View {
                             Text(saved.label).tag(entry.resolution)
                         }
                     }
-                    Picker("Aspect & scaling", selection: Binding(get: { entry.displayMode.rawValue }, set: { entry.display = $0 })) {
+                    Picker("画面比例与缩放", selection: Binding(get: { entry.displayMode.rawValue }, set: { entry.display = $0 })) {
                         ForEach(DisplayMode.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
                     }
                     // Every setting here is the Desktop's too: its programs present through
                     // the same path, and its launch applies them like a game's
                     // (applyEnvironment, gameConfigText). check-frontend holds the parity.
-                    Picker("MetalFX upscaling", selection: $entry.metalFXUpscale) {
-                        Text("Off").tag(Double?.none)
+                    Picker("MetalFX 超分辨率", selection: $entry.metalFXUpscale) {
+                        Text("关闭").tag(Double?.none)
                         Text("1.5×").tag(Double?.some(1.5))
                         Text("2×").tag(Double?.some(2))
                     }
                     FPSChoice(mode: $entry.fpsMode)
-                    Toggle("Frame generation (experimental)", isOn: Binding(get: { entry.frameGeneration ?? false }, set: { entry.frameGeneration = $0 ? true : nil }))
+                    Toggle("帧生成（实验性）", isOn: Binding(get: { entry.frameGeneration ?? false }, set: { entry.frameGeneration = $0 ? true : nil }))
                     if entry.frameGeneration == true {
-                        Text("Shows a MetalFX-generated frame between every two rendered frames: twice the frames on screen, at the cost of GPU time, some latency and artifacts at edges and on the HUD. FPS limits do not apply while it is on.")
+                        Text("此功能会在每两帧实际渲染的画面之间插入一帧由 MetalFX 生成的画面，使屏幕显示帧数翻倍，但会占用 GPU 资源、增加一些延迟，并可能在边缘和 HUD 上产生瑕疵。开启后，FPS 上限不生效。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                } header: { Text("Display") } footer: {
-                    Text("MetalFX upscaling renders at the resolution above and scales the picture up with Apple's MetalFX spatial scaler before it reaches the screen (Direct3D 11 and 12 programs). Use it with a small resolution for frame rate.")
+                } header: { Text("显示") } footer: {
+                    Text("MetalFX 超分辨率会先按上方设置的分辨率渲染，再通过 Apple MetalFX 空间缩放器放大画面，然后显示在屏幕上（适用于 Direct3D 11 和 12 程序）。调低分辨率并搭配此功能，有助于提升帧率。")
                 }
                 // ml1163: how the program starts. Not for the Desktop entry, nor for a Steam
                 // game started through Madeira Dock, whose desktop and command are Dock's:
                 // there these choices would do nothing.
                 if entry.usesLaunchOptions {
                     Section {
-                        Picker("Start", selection: Binding(get: { entry.runsInDesktop ? "desktop" : "direct" }, set: {
+                        Picker("开始", selection: Binding(get: { entry.runsInDesktop ? "desktop" : "direct" }, set: {
                             entry.launchMode = $0 == "desktop" ? "desktop" : nil
                         })) {
-                            Text("Directly").tag("direct")
-                            Text("In the Wine desktop").tag("desktop")
+                            Text("直接启动").tag("direct")
+                            Text("在 Wine 桌面中").tag("desktop")
                         }
-                        TextField("Working folder (default: the program's folder)", text: Binding(get: { entry.workingDirectory ?? "" }, set: {
+                        TextField("工作文件夹（默认为程序所在文件夹）", text: Binding(get: { entry.workingDirectory ?? "" }, set: {
                             entry.workingDirectory = $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0
                         })).autocorrectionDisabled().textInputAutocapitalization(.never).font(.body.monospaced())
-                        Toggle("Start Windows services first", isOn: Binding(get: { entry.startServices == true }, set: {
+                        Toggle("先启动 Windows 服务", isOn: Binding(get: { entry.startServices == true }, set: {
                             entry.startServices = $0 ? true : nil
                         }))
-                    } header: { Text("Launch") } footer: {
+                    } header: { Text("启动") } footer: {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Directly: the game is Wine's first program, with no desktop; small windows such as launchers and message boxes are drawn over the game, a window drawn without DirectX that fills the screen is not. In the Wine desktop: the game starts inside the Wine desktop at the Resolution above, where every window shows.")
-                            Text("The working folder is a C:\\ path, for example C:\\Games\\Some Game. Start Windows services first is for launchers that need them (Steam-style COM); Madeira writes a batch file for it in C:\\madeira-games.")
+                            Text("直接启动：游戏是 Wine 启动的第一个程序，不会显示桌面；启动器、消息框等小窗口会显示在游戏画面上，但不使用 DirectX 且铺满屏幕的窗口不会显示。在 Wine 桌面中：游戏会在上方设置的分辨率下运行于 Wine 桌面内，所有窗口都会显示。")
+                            Text("工作文件夹使用 C:\\ 路径，例如 C:\\Games\\Some Game。“先启动 Windows 服务”适用于需要这些服务的启动器（例如使用类似 Steam 的 COM 组件的启动器）；Madeira 会在 C:\\madeira-games 中为此创建批处理文件。")
                             if !entry.runsInDesktop && (entry.isBatch || entry.startServices == true) {
                                 // Wine stops with its first process (the ml1163 open risk).
-                                Text("Started directly, Wine stops when its first program exits, so a batch file that starts the game and exits closes the game too. Start it in the Wine desktop instead.")
+                                Text("直接启动时，Wine 会在第一个程序退出后停止运行。因此，如果批处理文件启动游戏后自行退出，游戏也会随之关闭。请改为在 Wine 桌面中启动。")
                                     .foregroundStyle(.orange)
                             }
                         }
@@ -3056,7 +3056,7 @@ struct LibraryDetail: View {
                 // A Steam game starts with Steam's own launch option through Madeira Dock.
                 if entry.desktop != true && entry.steamAppID == nil {
                     Section {
-                        TextField("Launch arguments", text: $entry.arguments)
+                        TextField("启动参数", text: $entry.arguments)
                             .font(.body.monospaced()).lineLimit(4)
                             .autocorrectionDisabled().textInputAutocapitalization(.never)
                         LaunchFlagChips(arguments: $entry.arguments)
@@ -3064,51 +3064,51 @@ struct LibraryDetail: View {
                         // the services batch, what starts the program).
                         Text(entry.commandPreview)
                             .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-                    } header: { Text("Launch arguments") } footer: {
-                        Text("Passed to the program on every start; the line above is the command that runs. The flags add or remove themselves; the renderer flags exclude each other, as do -windowed and -fullscreen.")
+                    } header: { Text("启动参数") } footer: {
+                        Text("每次启动时都会将这些内容传给程序；上方一行是实际执行的命令。相关标志会自动添加或移除；不同渲染器的标志互斥，-windowed 和 -fullscreen 也不能同时使用。")
                     }
                 }
                 Section {
-                    Toggle("Reduced-precision x87", isOn: $entry.reducedX87)
+                    Toggle("降低 x87 精度", isOn: $entry.reducedX87)
                     // Exported for this game only when chosen (applyEnvironment).
-                    Toggle("AVX and AVX2", isOn: Binding(get: { entry.avx ?? false }, set: { entry.avx = $0 ? true : nil }))
+                    Toggle("AVX 和 AVX2", isOn: Binding(get: { entry.avx ?? false }, set: { entry.avx = $0 ? true : nil }))
                     // Exported for this game only when chosen (applyEnvironment).
-                    Picker("CPU cores reported", selection: Binding(get: { entry.cpuCount ?? 0 }, set: { entry.cpuCount = $0 == 0 ? nil : $0 })) {
-                        Text("Automatic").tag(0)
+                    Picker("检测到的 CPU 核心数", selection: Binding(get: { entry.cpuCount ?? 0 }, set: { entry.cpuCount = $0 == 0 ? nil : $0 })) {
+                        Text("自动").tag(0)
                         ForEach([1, 2, 4, 6], id: \.self) { Text("\($0)").tag($0) }
                     }
-                    Picker("D3D9 anisotropic filtering", selection: Binding(get: { entry.anisotropyLimit ?? 0 }, set: { entry.anisotropyLimit = $0 == 0 ? nil : $0 })) {
-                        Text("Application default").tag(0)
-                        ForEach([1, 2, 4, 8], id: \.self) { Text("Up to \($0)×").tag($0) }
+                    Picker("D3D9 各向异性过滤", selection: Binding(get: { entry.anisotropyLimit ?? 0 }, set: { entry.anisotropyLimit = $0 == 0 ? nil : $0 })) {
+                        Text("应用默认值").tag(0)
+                        ForEach([1, 2, 4, 8], id: \.self) { Text("最高 \($0)×").tag($0) }
                     }
-                    Toggle("Report an NVIDIA GPU", isOn: Binding(get: { entry.reportNVIDIA ?? false }, set: { entry.reportNVIDIA = $0 ? true : nil }))
+                    Toggle("向游戏报告 NVIDIA 显卡", isOn: Binding(get: { entry.reportNVIDIA ?? false }, set: { entry.reportNVIDIA = $0 ? true : nil }))
                     // Fastsync-only switches: shown for every game, usable only while
                     // Settings › Sync engine is Fastsync.
                     Group {
-                        Toggle("Fast synchronization", isOn: Binding(get: { entry.fastSync ?? true }, set: { entry.fastSync = $0 }))
-                        Toggle("Fast semaphore waits (experimental)",
+                        Toggle("快速同步", isOn: Binding(get: { entry.fastSync ?? true }, set: { entry.fastSync = $0 }))
+                        Toggle("快速信号量等待（实验性）",
                                isOn: Binding(get: { entry.semaphoreFastPath ?? false }, set: { entry.semaphoreFastPath = $0 }))
                     }
                     .disabled(syncEngine != .fastsync)
                     if syncEngine != .fastsync {
-                        Text("Fast synchronization and fast semaphore waits are Fastsync options. Choose Fastsync in Settings › Memory & sync to use them.")
+                        Text("快速同步和快速信号量等待都属于 Fastsync 选项。要使用这些功能，请在“设置”›“内存与同步”中选择 Fastsync。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                } header: { Text("Compatibility & performance") } footer: {
-                    Text("Reduced-precision x87 can make older games faster at some cost in accuracy; it is off by default. Turn on AVX and AVX2 (off by default, 64-bit games) when a game built for AVX processors quits at start with an illegal instruction (c000001d); FEX then emulates AVX, which is slower. Report an NVIDIA GPU is for games that stop with \"no graphics card\" or \"failed to get GPU driver info\". With Fastsync, fast synchronization (on by default) handles events without a server round trip, and fast semaphore waits (off by default) does the same for semaphores. Settings apply to the next launch; a precision change may still require restarting Madeira.")
+                } header: { Text("兼容性与性能") } footer: {
+                    Text("降低 x87 精度可以提升部分老游戏的速度，但会牺牲一定准确性，默认关闭。如果 64 位游戏针对 AVX 处理器构建，并在启动时因非法指令（c000001d）退出，可尝试开启 AVX 和 AVX2（默认关闭）；此时 FEX 会模拟 AVX，运行速度会较慢。“报告 NVIDIA GPU”适用于因提示“no graphics card”或“failed to get GPU driver info”而退出的游戏。使用 Fastsync 时，“快速同步”（默认开启）可在进程内处理事件，避免与服务器往返；“快速信号量等待”（默认关闭）对信号量执行类似处理。设置会在下次启动时生效；精度设置更改后，可能还需要重启 Madeira。")
                 }
-                Section("On screen") {
-                    Toggle("Performance overlay", isOn: $entry.performance)
-                    Toggle("Live logs", isOn: $entry.liveLogs)
-                    Toggle("Touch controls", isOn: $entry.touchControls)
+                Section("屏幕上") {
+                    Toggle("性能浮层", isOn: $entry.performance)
+                    Toggle("实时日志", isOn: $entry.liveLogs)
+                    Toggle("触控操作", isOn: $entry.touchControls)
                     if GamepadInput.keyboardMouseAvailable {
                         ControllerModeChoice(mode: $entry.controllerMode)
                         if entry.controllerMode == "keys" {
-                            NavigationLink("Controller binds") {
+                            NavigationLink("手柄按键映射") {
                                 Form { ControllerBindsPage(binds: $entry.controllerBinds, mouseVertical: $entry.padMouseVertical) }
-                                    .navigationTitle("Controller binds")
+                                    .navigationTitle("手柄按键映射")
                                     .toolbar {
-                                        Button("Reset") { entry.controllerBinds = nil; entry.padMouseVertical = nil }
+                                        Button("重置") { entry.controllerBinds = nil; entry.padMouseVertical = nil }
                                             .disabled(entry.controllerBinds == nil && entry.padMouseVertical == nil)
                                     }
                             }
@@ -3120,10 +3120,10 @@ struct LibraryDetail: View {
                     LabeledContent15("Control size") {
                         Slider(value: Binding(get: { entry.controlSize ?? 1 }, set: { entry.controlSize = $0 }), in: 0.5...2)
                     }
-                    Text("Arrange buttons and choose XInput, mouse, or keyboard actions from the in-game menu.").font(.caption).foregroundStyle(.secondary)
+                    Text("在游戏内菜单中排列按键，并为按键选择 XInput、鼠标或键盘操作。").font(.caption).foregroundStyle(.secondary)
                     if GamepadInput.keyboardMouseAvailable {
-                        Text("XInput and DirectInput: for games older than XInput, which read the pad through DirectInput. The same pad is offered through both APIs, so a game that reads both may list two controllers. Applies to the next launch.").font(.caption).foregroundStyle(.secondary)
-                        Text("Keyboard and mouse: for games without controller support. The controller presses keys and moves the mouse (left stick WASD, right stick mouse, triggers click, D-pad arrows, Start Esc, Select Tab) and the game sees no controller. Change what each button does under Controller binds, here or in the in-game menu.").font(.caption).foregroundStyle(.secondary)
+                        Text("适用于较早、通过 DirectInput 读取手柄的游戏。启用后，同一手柄会同时通过这两个 API 提供给游戏；如果游戏同时读取两者，可能会显示两个手柄。设置将在下次启动时生效。").font(.caption).foregroundStyle(.secondary)
+                        Text("适用于不支持手柄的游戏。在此模式下，手柄会模拟键盘和鼠标操作（左摇杆对应 WASD，右摇杆控制鼠标，扳机键对应点击，方向键对应箭头键，Start 对应 Esc，Select 对应 Tab），游戏不会检测到手柄。可在此处或游戏内菜单的“手柄按键映射”中更改各按键的功能。").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Section {
@@ -3132,8 +3132,8 @@ struct LibraryDetail: View {
                     } label: {
                         LabeledContent15("This game's config", value: Self.configSummary(entry.config))
                     }
-                } header: { Text("Advanced") } footer: {
-                    Text("Lines in madeira.cfg's format for this game only. A key set here wins over madeira.cfg wherever the runtime reads it, env.NAME lines are exported after madeira.cfg's, and dxmt options are added to madeira.cfg's. Applies from the next start.")
+                } header: { Text("高级") } footer: {
+                    Text("仅对当前游戏生效，格式与 madeira.cfg 相同。运行时读取到同名选项时，此处设置的值优先于 madeira.cfg；env.NAME 行会在 madeira.cfg 之后导出，dxmt 选项则会追加到 madeira.cfg。更改将在下次启动时生效。")
                 }
                 // A link that starts this game from a Home Screen icon (SavesAndShortcuts.swift).
                 if entry.desktop != true {
@@ -3145,8 +3145,8 @@ struct LibraryDetail: View {
                             Label(copiedLink ? "Link copied" : "Copy Home Screen shortcut link",
                                   systemImage: copiedLink ? "checkmark" : "link")
                         }
-                    } header: { Text("Home Screen") } footer: {
-                        Text("In the Shortcuts app: new shortcut, Open URLs, paste the link, then Share › Add to Home Screen.")
+                    } header: { Text("主屏幕") } footer: {
+                        Text("在“快捷指令”App 中新建快捷指令，选择“打开 URL”，粘贴链接，然后依次点按“分享”›“添加到主屏幕”。")
                     }
                 }
                 if entry.steamAppID != nil {
@@ -3155,20 +3155,20 @@ struct LibraryDetail: View {
                         if entry.startsSteamGameDirectly, !entry.launchArguments.isEmpty {
                             Text(entry.launchArguments).font(.caption.monospaced()).textSelection(.enabled)
                         }
-                    } header: { Text("Executable") } footer: {
+                    } header: { Text("可执行文件") } footer: {
                         Text(entry.startsSteamGameDirectly
                              ? "The game starts this program directly, without Steam."
                              : "Valve's client starts the game's default Steam launch option from this folder.")
                     }
                 } else if entry.desktop != true {
-                    Section("Executable") { Text(entry.windowsPath).font(.caption.monospaced()).textSelection(.enabled) }
-                    Section { Button("Remove from library", role: .destructive) { remove = true } }
+                    Section("可执行文件") { Text(entry.windowsPath).font(.caption.monospaced()).textSelection(.enabled) }
+                    Section { Button("从游戏库中移除", role: .destructive) { remove = true } }
                 }
                 if let error { Section { Text(error).foregroundStyle(.red) } }
             }
-            .navigationTitle("Game details").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("游戏详情").navigationBarTitleDisplayMode(.inline)
             .navigationMaterial15(visible: true)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.save(entry); dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { model.save(entry); dismiss() } } }
             .sheet(isPresented: $findCover) { SteamSearchView(query: entry.title) { match in entry.steamID = match.id; entry.title = match.name; entry.coverFile = nil } }
             .fileImporter(isPresented: $importCover, allowedContentTypes: [.image]) { result in
                 do {
@@ -3184,8 +3184,8 @@ struct LibraryDetail: View {
                     let name = entry.id.uuidString + ".jpg"; try jpeg.write(to: dir.appendingPathComponent(name), options: .atomic); entry.coverFile = name
                 } catch { self.error = error.localizedDescription }
             }
-            .confirmationDialog("Remove this library entry? Your executable and saves stay in drive_c.", isPresented: $remove, titleVisibility: .visible) {
-                Button("Remove", role: .destructive) { leaving = true; model.remove(entry.id); dismiss() }
+            .confirmationDialog("确定要从游戏库中移除此条目吗？可执行文件和存档仍会保留在 drive_c 中。", isPresented: $remove, titleVisibility: .visible) {
+                Button("移除", role: .destructive) { leaving = true; model.remove(entry.id); dismiss() }
             }
             .task {
                 if entry.graphicsAPI == nil, entry.desktop != true, let url = try? LibraryModel.executable(entry.relativePath) { entry.graphicsAPI = LibraryModel.graphicsImports(url) }
@@ -3212,10 +3212,10 @@ struct LibraryGameConfigEditor: View {
                     .font(.caption.monospaced()).frame(minHeight: 260)
                     .autocorrectionDisabled().textInputAutocapitalization(.never)
             } footer: {
-                Text("One key = value per line, as in madeira.cfg; lines starting with # are comments. Examples: fence-chain = 6, dxmt = d3d11.mipClampBC=1, env.FEX_MULTIBLOCK = 1.")
+                Text("每行填写一个“键 = 值”，格式与 madeira.cfg 相同；以 # 开头的行是注释。例如：fence-chain = 6、dxmt = d3d11.mipClampBC=1、env.FEX_MULTIBLOCK = 1。")
             }
         }
-        .navigationTitle("This game's config").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("此游戏的配置").navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -3242,9 +3242,9 @@ struct SteamSearchView: View {
                         }
                     }
                 }
-            }.navigationTitle("Find on Steam")
+            }.navigationTitle("在 Steam 中查找")
             .searchable(text: $query, prompt: "Title").onSubmit(of: .search) { submitted = query }
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .onAppear { submitted = query }
             .task(id: submitted) {
                 guard !submitted.trimmingCharacters(in: .whitespaces).isEmpty else { return }
@@ -3285,21 +3285,21 @@ struct ControllerBindsPage: View {
             }
         }
         if effective("RS").stickKeys == nil {
-            Section("Right stick as mouse") {
+            Section("右摇杆映射为鼠标") {
                 LabeledContent15("Vertical speed") {
                     HStack {
                         Slider(value: Binding(get: { mouseVertical ?? 1 }, set: { mouseVertical = abs($0 - 1) < 0.01 ? nil : $0 }), in: 0.25...1.5, step: 0.05)
                         Text("\(Int(((mouseVertical ?? 1) * 100).rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
                     }
                 }
-                Text("Relative to horizontal. Games scale the camera's pitch and yaw differently from a mouse; lower this if the view climbs faster than it turns.")
+                Text("相对于水平方向。游戏对视角俯仰和偏航的缩放方式可能与鼠标不同；如果视角上移比转向更快，请调低此值。")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
         Section {
-            Button("Reset all to defaults", role: .destructive) { reset() }
+            Button("全部恢复默认值", role: .destructive) { reset() }
                 .disabled(!changed)
-            Text("Defaults: left stick WASD, right stick mouse, RT and LT click, D-pad arrows, A Space, B Ctrl, X E, Y R, LB Q, RB F, L3 Shift, R3 C, Start Esc, Select Tab. A touch control's own controller binding (control editor) applies when a row is at its default.")
+            Text("默认映射：左摇杆对应 WASD，右摇杆控制鼠标，RT 和 LT 对应鼠标点击，方向键对应箭头键；A 对应空格，B 对应 Ctrl，X 对应 E，Y 对应 R，LB 对应 Q，RB 对应 F，L3 对应 Shift，R3 对应 C，Start 对应 Esc，Select 对应 Tab。若某一行仍使用默认值，则触控控件自身在控件编辑器中设置的手柄映射会生效。")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -3326,25 +3326,25 @@ struct ControllerBindsPage: View {
                 } else {
                     pick(name, "Left click", .mouseLeft)
                     pick(name, "Right click", .mouseRight)
-                    Menu("Letters") { ForEach(0x41...0x5A, id: \.self) { vk in pick(name, String(UnicodeScalar(UInt8(vk))), .key(Int32(vk))) } }
-                    Menu("Numbers") { ForEach(0x30...0x39, id: \.self) { vk in pick(name, String(UnicodeScalar(UInt8(vk))), .key(Int32(vk))) } }
-                    Menu("Function keys") { ForEach(0...11, id: \.self) { i in pick(name, "F\(i + 1)", .key(Int32(0x70 + i))) } }
-                    Menu("Modifiers & editing") {
+                    Menu("字母键") { ForEach(0x41...0x5A, id: \.self) { vk in pick(name, String(UnicodeScalar(UInt8(vk))), .key(Int32(vk))) } }
+                    Menu("数字键") { ForEach(0x30...0x39, id: \.self) { vk in pick(name, String(UnicodeScalar(UInt8(vk))), .key(Int32(vk))) } }
+                    Menu("功能键") { ForEach(0...11, id: \.self) { i in pick(name, "F\(i + 1)", .key(Int32(0x70 + i))) } }
+                    Menu("修饰键与编辑操作") {
                         pick(name, "Escape", .key(0x1B)); pick(name, "Tab", .key(0x09)); pick(name, "Shift", .key(0x10))
                         pick(name, "Ctrl", .key(0x11)); pick(name, "Alt", .key(0x12)); pick(name, "Space", .key(0x20))
                         pick(name, "Enter", .key(0x0D)); pick(name, "Backspace", .key(0x08)); pick(name, "Caps Lock", .key(0x14))
                     }
-                    Menu("Navigation") {
+                    Menu("导航") {
                         pick(name, "↑", .key(0x26)); pick(name, "↓", .key(0x28)); pick(name, "←", .key(0x25)); pick(name, "→", .key(0x27))
                         pick(name, "Insert", .key(0x2D)); pick(name, "Delete", .key(0x2E)); pick(name, "Home", .key(0x24))
                         pick(name, "End", .key(0x23)); pick(name, "Page Up", .key(0x21)); pick(name, "Page Down", .key(0x22))
                     }
-                    Menu("Symbols") {
+                    Menu("符号") {
                         pick(name, "-", .key(0xBD)); pick(name, "=", .key(0xBB)); pick(name, "[", .key(0xDB)); pick(name, "]", .key(0xDD))
                         pick(name, "\\", .key(0xDC)); pick(name, ";", .key(0xBA)); pick(name, "'", .key(0xDE)); pick(name, ",", .key(0xBC))
                         pick(name, ".", .key(0xBE)); pick(name, "/", .key(0xBF)); pick(name, "`", .key(0xC0))
                     }
-                    Menu("Numpad") {
+                    Menu("数字小键盘") {
                         ForEach(0...9, id: \.self) { i in pick(name, "Numpad \(i)", .key(Int32(0x60 + i))) }
                         pick(name, "Numpad *", .key(0x6A)); pick(name, "Numpad +", .key(0x6B)); pick(name, "Numpad −", .key(0x6D))
                         pick(name, "Numpad .", .key(0x6E)); pick(name, "Numpad /", .key(0x6F))
@@ -3354,7 +3354,7 @@ struct ControllerBindsPage: View {
                 }
                 if changed {
                     Divider()
-                    Button("Default") { binds?[name] = nil; if binds?.isEmpty == true { binds = nil } }
+                    Button("默认") { binds?[name] = nil; if binds?.isEmpty == true { binds = nil } }
                 }
             } label: {
                 HStack(spacing: 6) {
@@ -3446,7 +3446,7 @@ struct DockOfflineMark: View {
         .buttonStyle(.plain)
         .task { preparedOnline = MadeiraDock.games(drive: MadeiraDock.drive).first { $0.id == appID }?.customExecutables ?? false }
         .alert(ready ? "Can be played offline" : "Not ready for offline play yet", isPresented: $explain) {
-            Button("OK", role: .cancel) {}
+            Button("好", role: .cancel) {}
         } message: { Text(Self.explanation(mark)) }
     }
     static func line(_ mark: DockOffline.Mark) -> String {
@@ -3473,10 +3473,10 @@ struct ControllerModeChoice: View {
     @Binding var mode: String?
     var body: some View {
         LabeledContent15("Controller") {
-            Picker("Controller", selection: Binding(get: { mode ?? "" }, set: { mode = $0.isEmpty ? nil : $0 })) {
-                Text("Game's own support").tag("")
-                Text("XInput and DirectInput").tag("dinput")
-                Text("Keyboard and mouse").tag("keys")
+            Picker("手柄", selection: Binding(get: { mode ?? "" }, set: { mode = $0.isEmpty ? nil : $0 })) {
+                Text("游戏自身支持").tag("")
+                Text("XInput 和 DirectInput").tag("dinput")
+                Text("键盘和鼠标").tag("keys")
             }.pickerStyle(.menu).labelsHidden()
         }
     }
@@ -3538,12 +3538,12 @@ struct LaunchFlagChips: View {
 struct FPSChoice: View {
     @Binding var mode: Int
     var body: some View {
-        HStack { Text("FPS limit"); Spacer(); Picker("FPS limit", selection: $mode) {
+        HStack { Text("FPS 上限"); Spacer(); Picker("FPS 上限", selection: $mode) {
             // 30 needs DXMT's 30 FPS cap (ProMotionIntent.has30Cap); a saved 30 stays selectable.
             if ProMotionIntent.has30Cap || mode == 3 { Text("30 FPS").tag(3) }
             // 40 needs DXMT's 40 FPS cap and a 120 Hz panel (ProMotionIntent.has40Cap).
             if ProMotionIntent.has40Cap || mode == 4 { Text("40 FPS").tag(4) }
-            Text("60 FPS").tag(1); Text("Display maximum").tag(0); Text("Uncapped").tag(2)
+            Text("60 FPS").tag(1); Text("显示器最高刷新率").tag(0); Text("不限帧率").tag(2)
         }.labelsHidden().pickerStyle(.menu) }
     }
 }
@@ -3556,13 +3556,13 @@ struct DisplayRateSettings: View {
 
     var body: some View {
         Section {
-            Toggle("Hold the display at its maximum rate", isOn: Binding(get: { hold }, set: { on in
+            Toggle("保持显示屏以最高刷新率运行", isOn: Binding(get: { hold }, set: { on in
                 hold = on
                 MadeiraConfig.set("env.MADEIRA_PROMOTE", on ? "1" : nil)
                 LogStore.shared.log("[runtime-settings] promote=\(on ? 1 : 0)")
             }))
-        } header: { Text("Display") } footer: {
-            Text("Off by default. On a 120 Hz display, keeps the panel at 120 Hz during a game's 60 FPS limit so a frame that misses one refresh waits 8 ms instead of 17 ms. Uses more power.")
+        } header: { Text("显示") } footer: {
+            Text("默认关闭。在支持 120 Hz 的显示屏上，即使游戏限制为 60 FPS，也会保持屏幕以 120 Hz 刷新；错过一次刷新时，下一帧只需等待 8 毫秒，而不是 17 毫秒。此功能会增加耗电量。")
         }
     }
 }
@@ -3693,7 +3693,7 @@ struct RuntimeMemorySyncSettings: View {
                      zero: "Automatic", label: Self.gb)
             mbPicker("Swap tier", key: "swap-mb", value: $swapMB, choices: Self.swapChoices,
                      zero: "Off", label: Self.gb)
-            Picker("Swap coverage", selection: Binding(get: { coverage }, set: { mode in
+            Picker("交换内存覆盖范围", selection: Binding(get: { coverage }, set: { mode in
                 coverage = mode; changed = true
                 // With swap-mode = 2 no key means broad, so classic is written out.
                 MadeiraConfig.set("env.MADEIRA_SWAP_COVERAGE", mode.isEmpty ? (Self.swapModeBroad ? "classic" : nil) : mode)
@@ -3703,29 +3703,29 @@ struct RuntimeMemorySyncSettings: View {
                 if !Self.coverageChoices.contains(where: { $0.0 == coverage }) { Text(coverage).tag(coverage) }
             }
             .disabled(swapMB == 0)
-            Picker("Sync engine", selection: Binding(get: { engine }, set: { choice in
+            Picker("同步引擎", selection: Binding(get: { engine }, set: { choice in
                 engine = choice; changed = true
                 SyncEngine.apply(choice)
                 LogStore.shared.log("[runtime-settings] sync-engine=\(choice.rawValue)")
             })) {
                 ForEach(SyncEngine.allCases) { Text($0.label).tag($0) }
             }
-            Toggle("Eco mode", isOn: Binding(get: { eco }, set: { on in
+            Toggle("节能模式", isOn: Binding(get: { eco }, set: { on in
                 eco = on; changed = true
                 MadeiraConfig.set("eco", on ? "1" : nil)
                 LogStore.shared.log("[runtime-settings] eco=\(on ? 1 : 0)")
             }))
             Button { open(.allSettings) } label: {
-                Label("All settings (\(ConfigCatalog.generated.count - Self.featuredKeys.count) more)", systemImage: "slider.horizontal.3")
+                Label("所有设置（另有 \(ConfigCatalog.generated.count - Self.featuredKeys.count) 项）", systemImage: "slider.horizontal.3")
             }
-        } header: { Text("Memory & sync") } footer: {
+        } header: { Text("内存与同步") } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("JIT pool is the memory reserved at launch for translated x86 code (256 to 1152 MB; below 512 MB, large games can run out of room for it).")
-                Text("Video memory is how much graphics memory games are told they have. Automatic sizes it from the memory free at launch. Too high can get Madeira closed for using too much memory; too low makes games keep reloading textures.")
-                Text("Swap tier moves game data to a file on this device's storage when memory runs short, up to the chosen size, at some speed cost. Coverage decides which allocations it moves: large ones only (8 MB and up, the default), every allocation of 1 MB and up, or those plus allocations that overflow the game's address range. Broad backs every new reservation of 4 MB and up (madeira.cfg swap-min-mb moves the floor) as it is made, so the small commits games make inside it are covered too, and the swap tier size limits the storage it uses. Wider coverage saves more memory but can slow a game down.")
-                Text("Sync engine: Fastsync (the default) handles events and semaphores in-process; its per-game options are in each game's details. Madsync is the older in-process engine. Wine standard sync uses neither. Only one engine runs at a time.")
-                Text("Eco mode starts every game with its threads at a low priority, which saves power but makes games run slower. Off by default. It is meant for loading screens: Eco mode in the in-game menu turns it on and off while a game runs.")
-                if changed { Text("Restart Madeira (close it from the app switcher) for these changes to apply.").foregroundStyle(.orange) }
+                Text("JIT 内存池是在启动时为转换后的 x86 代码预留的内存（256–1152 MB；小于 512 MB 时，大型游戏可能会因空间不足而无法运行）。")
+                Text("显存是游戏认为自己可用的图形内存容量。“自动”会根据启动时的可用内存确定容量。设置过高可能导致 Madeira 因占用内存过多而被系统关闭；设置过低则会让游戏反复重新加载纹理。")
+                Text("当内存不足时，“交换内存等级”会将游戏数据移至本设备存储空间中的文件，最多使用所选容量，但会影响运行速度。“覆盖范围”决定哪些内存分配会被移出：仅移动较大的分配（默认 8 MB 及以上）；移动所有 1 MB 及以上的分配；或在此基础上，还包括超出游戏地址范围的分配。“广泛”模式会在创建每个 4 MB 及以上的新内存预留区域时立即将其纳入交换覆盖范围（可通过 madeira.cfg 中的 swap-min-mb 调整最低值），因此游戏在该区域内进行的小块内存提交也会被覆盖。交换内存等级决定可使用的存储空间上限。覆盖范围越广，节省的内存越多，但也可能降低游戏速度。")
+                Text("同步引擎：默认的 Fastsync 会在进程内处理事件和信号量；各游戏的相关选项位于游戏详情中。Madsync 是较旧的进程内同步引擎。Wine 标准同步不使用这两种引擎。任何时候只会启用一种引擎。")
+                Text("节能模式会以较低优先级运行每个游戏的线程，从而降低耗电，但也会让游戏变慢。默认关闭。此模式适合游戏加载时使用；游戏运行期间可在游戏内菜单中随时开启或关闭。")
+                if changed { Text("请从应用切换器中彻底关闭并重新打开 Madeira，以应用这些更改。").foregroundStyle(.orange) }
             }
         }
         .onChange(of: refresh) { _ in
@@ -3746,8 +3746,8 @@ struct LibraryPointerSettings: View {
         })
     }
     var body: some View {
-        Picker("Pointer mode", selection: mode) {
-            Text("Absolute").tag("absolute"); Text("Relative").tag("relative"); Text("Touch").tag("touch")
+        Picker("指针模式", selection: mode) {
+            Text("绝对模式").tag("absolute"); Text("相对模式").tag("relative"); Text("触控").tag("touch")
         }.pickerStyle(.segmented)
         Text(input.touchMode ? "Tap the screen to position and click. Hold and move to drag. Two fingers: right click or scroll."
              : (input.relative ? "Drag to send relative mouse movement for mouse-look. Tap to click." : "Drag the pointer like a trackpad. Tap to click."))
@@ -3805,8 +3805,8 @@ struct LibraryFloatingItem: View {
                     Image(systemName: "line.3.horizontal").font(.title3.weight(.semibold)).frame(width: 48, height: 48)
                 }.buttonStyle(.plain).modifier(LibraryPillGlass())
                     .opacity(faded && drag == .zero && !model.menu ? 0.3 : 1)
-                    .accessibilityLabel("Game menu").accessibilityHint("Drag to move")
-            } else { LibraryMetrics().accessibilityHint("Drag to move") }
+                    .accessibilityLabel("游戏菜单").accessibilityHint("拖动以移动")
+            } else { LibraryMetrics().accessibilityHint("拖动以移动") }
         }
         .frame(maxWidth: isMenu ? 48 : max(48, min(390, viewport.width - insets.leading - insets.trailing - 16)))
         .fixedSize(horizontal: false, vertical: true)
@@ -3923,7 +3923,7 @@ struct LibraryHUD: View {
                 Text(entry.title).font(.title2.bold()).multilineTextAlignment(.center)
                 if dockStart.failure == nil { ProgressView().tint(.white) }
                 if let failure = dockStart.failure {
-                    Text("Madeira Dock stopped").font(.headline)
+                    Text("Madeira Dock 已停止").font(.headline)
                     Text(failure).font(.caption).multilineTextAlignment(.center).frame(maxWidth: 360)
                 } else if dockStart.active {
                     // What the Dock start is waiting for, from the host's report, and what it
@@ -3934,7 +3934,7 @@ struct LibraryHUD: View {
                             if let note = DockInstallers.note {
                                 Text(note).font(.caption).foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center).frame(maxWidth: 360)
                             }
-                            Text("\(Int(context.date.timeIntervalSince(model.launchStartedAt)))s")
+                            Text("\(Int(context.date.timeIntervalSince(model.launchStartedAt))) 秒")
                                 .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                         }
                     }
@@ -3942,7 +3942,7 @@ struct LibraryHUD: View {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         VStack(spacing: 8) {
                             Text(model.launchSlow ? "Still starting…" : "Starting your game…").foregroundStyle(.white.opacity(0.7))
-                            Text("\(Int(context.date.timeIntervalSince(model.launchStartedAt)))s")
+                            Text("\(Int(context.date.timeIntervalSince(model.launchStartedAt))) 秒")
                                 .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.4))
                         }
                     }
@@ -3960,11 +3960,11 @@ struct LibraryHUD: View {
                     }
                     if dockStart.holding {
                         launchGlyph("Show desktop", "macwindow") { dockStart.showDesktop(model) }
-                            .accessibilityHint("Shows the Windows desktop")
+                            .accessibilityHint("显示 Windows 桌面")
                     }
                 }
                 if model.launchSlow && !dockStart.holding {
-                    Button("Show game view") { model.showGameView(reason: "button") }.frame(minHeight: 44)
+                    Button("显示游戏画面") { model.showGameView(reason: "button") }.frame(minHeight: 44)
                 }
                 if showLogs && !sideLogs {
                     LibraryLiveLogs().frame(maxWidth: 550).frame(height: compact ? 90 : 120).clipped()
@@ -4019,13 +4019,13 @@ struct LibraryHUD: View {
     private var bindsMenu: some View {
         VStack(spacing: 0) {
             HStack {
-                Button { bindsPage = false } label: { Label("Session", systemImage: "chevron.left") }.buttonStyle(.borderless)
+                Button { bindsPage = false } label: { Label("会话", systemImage: "chevron.left") }.buttonStyle(.borderless)
                 Spacer()
-                Text("Controller binds").font(.headline)
+                Text("手柄按键映射").font(.headline)
                 Spacer()
-                Button("Reset") { model.controllerBinds = [:]; model.padMouseVertical = 1; model.saveCurrentProfile() }
+                Button("重置") { model.controllerBinds = [:]; model.padMouseVertical = 1; model.saveCurrentProfile() }
                     .buttonStyle(.borderless).disabled(model.controllerBinds.isEmpty && model.padMouseVertical == 1)
-                Button("Done") { model.menu = false }.buttonStyle(.bordered)
+                Button("完成") { model.menu = false }.buttonStyle(.bordered)
             }.padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 8)
             Form {
                 ControllerBindsPage(binds: Binding(get: { model.controllerBinds.isEmpty ? nil : model.controllerBinds },
@@ -4040,9 +4040,9 @@ struct LibraryHUD: View {
     private var menu: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HStack { Label("Session", systemImage: "gamecontroller.fill").font(.title2.bold()); Spacer(); Button("Done") { model.menu = false }.buttonStyle(.bordered) }
+                HStack { Label("会话", systemImage: "gamecontroller.fill").font(.title2.bold()); Spacer(); Button("完成") { model.menu = false }.buttonStyle(.bordered) }
                 // The controls come first, the easiest to reach; the overlay settings last.
-                Toggle("Touch controls", isOn: $controls.visible)
+                Toggle("触控操作", isOn: $controls.visible)
                 // The named layouts (Xbox controller, custom ones) live here in a session: this
                 // menu replaces the overlay's top bar, where the same menu sits outside the library.
                 if controls.visible && ControlPresetsModel.enabled {
@@ -4053,25 +4053,25 @@ struct LibraryHUD: View {
                 }
                 LabeledContent15("Opacity") { Slider(value: $model.opacity, in: 0.15...1) }
                 LabeledContent15("Size") { Slider(value: $controls.sizeScale, in: 0.5...2) }
-                Button { controls.visible = true; controls.editing = true; model.menu = false } label: { Label("Edit controls", systemImage: "slider.horizontal.3") }
+                Button { controls.visible = true; controls.editing = true; model.menu = false } label: { Label("编辑控件", systemImage: "slider.horizontal.3") }
                 if GamepadInput.keyboardMouseAvailable {
                     ControllerModeChoice(mode: Binding(get: { model.controllerMode }, set: { model.controllerMode = $0; model.saveCurrentProfile() }))
                     if model.controllerMode == "keys" {
-                        Button { bindsPage = true } label: { Label("Controller binds", systemImage: "gamecontroller") }
+                        Button { bindsPage = true } label: { Label("手柄按键映射", systemImage: "gamecontroller") }
                     } else if model.controllerMode == "dinput" {
                         // ml1240: the DirectInput device exists only from the launch on.
-                        Text("XInput and DirectInput applies to the next launch.")
+                        Text("XInput 和 DirectInput 设置将在下次启动时生效。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Button { model.menu = false; LibraryKeyboard.show() } label: { Label("Keyboard", systemImage: "keyboard") }
+                Button { model.menu = false; LibraryKeyboard.show() } label: { Label("键盘", systemImage: "keyboard") }
                 Divider()
                 FPSChoice(mode: Binding(get: { model.fpsMode }, set: { model.setFPS($0) }))
                 // Saved to the game with the rest of the session's profile.
                 // MADEIRA_SESSION_TOOLS=0 hides it.
                 if sessionTools {
                     LabeledContent15("Aspect & scaling") {
-                        Picker("Aspect & scaling", selection: $model.displayMode) {
+                        Picker("画面比例与缩放", selection: $model.displayMode) {
                             ForEach(DisplayMode.allCases, id: \.self) { mode in Label(mode.label, systemImage: mode.symbol).tag(mode) }
                         }.pickerStyle(.menu).labelsHidden()
                     }
@@ -4079,14 +4079,14 @@ struct LibraryHUD: View {
                 Divider()
                 // ml1133's ECO switch, live: the same as the developer overlay's ECO pill.
                 Text("CPU").font(.headline)
-                Toggle("Eco mode", isOn: Binding(get: { eco }, set: { on in eco = on; madeira_set_eco(on ? 1 : 0) }))
-                Text("Runs the game's threads at a low priority, on the efficiency cores: cooler and slower. Use it while a game loads and turn it off to play.")
+                Toggle("节能模式", isOn: Binding(get: { eco }, set: { on in eco = on; madeira_set_eco(on ? 1 : 0) }))
+                Text("游戏线程会以较低优先级在能效核心上运行，因此设备更凉、速度也更慢。建议在游戏加载时开启，开始游玩后关闭。")
                     .font(.caption).foregroundStyle(.secondary)
                 Divider()
-                Text("Mouse & pointer").font(.headline)
+                Text("鼠标与指针").font(.headline)
                 LibraryPointerSettings()
                 Divider()
-                Toggle("Performance overlay", isOn: $model.performance)
+                Toggle("性能浮层", isOn: $model.performance)
                 if model.performance {
                     ForEach(["FPS", "Frame time", "CPU", "GPU", "RAM", "Battery", "Thermal"], id: \.self) { field in
                         Toggle(field, isOn: Binding(get: { model.overlayFields.contains(field) }, set: { on in
@@ -4099,7 +4099,7 @@ struct LibraryHUD: View {
                 // MADEIRA_SESSION_TOOLS=0).
                 if sessionTools && sessionDiagnostics {
                     Divider()
-                    Text("Diagnostics").font(.headline)
+                    Text("诊断").font(.headline)
                     Button {
                         model.menu = false
                         // After the menu has gone, so the frame shows what the player saw.
@@ -4107,16 +4107,16 @@ struct LibraryHUD: View {
                             madeira_capture_request(1)
                             LogStore.shared.log("[capture] frame capture requested from the in-game menu")
                         }
-                    } label: { Label("Capture the next frame", systemImage: "camera.viewfinder") }
+                    } label: { Label("捕获下一帧", systemImage: "camera.viewfinder") }
                     LabeledContent15("GPU sync") {
-                        Picker("GPU sync", selection: Binding(get: { fenceMode }, set: { mode in
+                        Picker("GPU 同步", selection: Binding(get: { fenceMode }, set: { mode in
                             fenceMode = mode; FPSOverlayFenceMode.current = mode
                             madeira_set_fence_mode(Int32(mode == 0 ? 7 : mode))
                         })) {
                             Text("F1").tag(1); Text("F6").tag(6); Text("F5").tag(5); Text("F0").tag(0)
                         }.pickerStyle(.segmented).frame(maxWidth: 220)
                     }
-                    Text("Both apply to Direct3D 12 games only. Capture writes the render passes of the next frame to Documents/capture and its draw list to the log. GPU sync: F1 makes every pass wait for the one before (the default), F6 waits only where the game's barriers ask, F5 makes render passes wait at the fragment stage, F0 has no sync at all (expect flicker; for tests).")
+                    Text("这两项设置仅适用于 Direct3D 12 游戏。“捕获”会将下一帧的渲染通道写入 Documents/capture，并将绘制列表写入日志。GPU 同步方式：F1（默认）让每个通道等待前一个通道完成；F6 仅在游戏要求的屏障处等待；F5 让渲染通道在片元阶段等待；F0 则完全不同步（可能出现闪烁，仅建议用于测试）。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let appID = model.activeEntry?.steamAppID, SteamOwnedLibrary.cloudQuitEnabled {
@@ -4126,9 +4126,9 @@ struct LibraryHUD: View {
                 Divider()
                 // Red label and symbol; the menu's .primary style would otherwise win.
                 Button(role: .destructive) { model.requestQuit() } label: {
-                    Label("Quit game", systemImage: "stop.circle").foregroundStyle(.red)
+                    Label("退出游戏", systemImage: "stop.circle").foregroundStyle(.red)
                 }.tint(.red)
-                Text("Closes the running session. Unsaved progress will be lost.").font(.caption).foregroundStyle(.secondary)
+                Text("关闭后将结束当前会话，未保存的进度会丢失。").font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
                 .foregroundStyle(.primary)
         }
@@ -4151,7 +4151,7 @@ struct LibraryLiveLogs: View {
                 .frame(maxWidth: .infinity, minHeight: max(0, geo.size.height - 16), alignment: .topLeading)
             }.bottomScrollAnchor15().padding(8)
         }.background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10)).foregroundStyle(.white)
-            .accessibilityLabel("Live diagnostic log")
+            .accessibilityLabel("实时诊断日志")
     }
 }
 

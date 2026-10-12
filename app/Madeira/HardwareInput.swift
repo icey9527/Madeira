@@ -2054,7 +2054,7 @@ struct HardwareInputSettings: View {
                         Image(systemName: "computermouse")
                             .font(.system(size: 13))
                             .foregroundColor(.secondary)
-                            .accessibilityLabel("Mouse sensitivity")
+                            .accessibilityLabel("鼠标灵敏度")
                         Slider(value: $input.sensMouse, in: 0.10...8.0)
                         Text(String(format: "%.2f", input.sensMouse))
                             .font(.system(size: 12, design: .monospaced))
@@ -2065,7 +2065,7 @@ struct HardwareInputSettings: View {
                 }
                 if open && pad.controllerConnected {
                     Toggle(isOn: $input.padRightStickMouse) {
-                        Label("Right stick controls mouse", systemImage: "gamecontroller")
+                        Label("右摇杆控制鼠标", systemImage: "gamecontroller")
                             .font(.system(size: 13))
                     }
                 }
@@ -2102,7 +2102,7 @@ struct HardwareInputSettings: View {
     /// device is routed through AssistiveTouch.
     private var hint: some View {
         HStack(alignment: .top, spacing: 8) {
-            Text("Mouse detected. iPhone needs AssistiveTouch: "
+            Text("已检测到鼠标。iPhone 需要启用辅助触控： "
                  + "Settings > Accessibility > Touch > AssistiveTouch > On, then Devices")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
@@ -2117,7 +2117,7 @@ struct HardwareInputSettings: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel("关闭提示")
         }
     }
 }

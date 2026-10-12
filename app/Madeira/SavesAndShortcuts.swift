@@ -326,20 +326,20 @@ struct SavesSection: View {
                 }
             } label: {
                 HStack {
-                    Label("Back up saves", systemImage: "externaldrive.badge.icloud")
+                    Label("备份存档", systemImage: "externaldrive.badge.icloud")
                     if busy { Spacer(); ProgressView() }
                 }
             }
             .disabled(busy)
             Button { importing = true } label: {
-                Label("Restore saves from a backup…", systemImage: "arrow.uturn.backward.circle")
+                Label("从备份恢复存档…", systemImage: "arrow.uturn.backward.circle")
             }
             .disabled(busy)
             if let m = message { Text(m).font(.caption).foregroundStyle(.secondary) }
         } header: {
-            Text("Saves")
+            Text("存档")
         } footer: {
-            Text("A backup is one zip of every Windows user's Documents, Saved Games and AppData (caches left out), "
+            Text("备份会将这台设备上所有 Windows 用户的“文档”“已保存的游戏”和 AppData 打包成一个 ZIP 文件（不包含缓存）， "
                  + "to keep in Files or iCloud Drive. Restoring puts those files back and overwrites saves with "
                  + "the same names.")
         }
@@ -355,10 +355,10 @@ struct SavesSection: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.zip]) { r in
             if case .success(let url) = r { pendingRestore = url }
         }
-        .confirmationDialog("Restore saves from \(pendingRestore?.lastPathComponent ?? "the backup")?",
+        .confirmationDialog("从 \(pendingRestore?.lastPathComponent ?? "the backup")?",
                             isPresented: Binding(get: { pendingRestore != nil }, set: { if !$0 { pendingRestore = nil } }),
                             titleVisibility: .visible) {
-            Button("Restore", role: .destructive) {
+            Button("恢复", role: .destructive) {
                 guard let url = pendingRestore else { return }
                 pendingRestore = nil
                 busy = true
@@ -374,7 +374,7 @@ struct SavesSection: View {
                 }
             }
         } message: {
-            Text("Files with the same names in C:\\users are overwritten.")
+            Text("C:\\users 中同名的文件会被覆盖。")
         }
     }
 }

@@ -216,7 +216,7 @@ struct OnboardingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let position = OnboardingRules.position(of: model.step, in: model.steps), position.count > 1 {
-                        Text("Step \(position.number) of \(position.count)")
+                        Text("第 \(position.number) 步，共 \(position.count) 步")
                             .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                     }
                     switch model.step {
@@ -295,7 +295,7 @@ struct OnboardingView: View {
                 .foregroundStyle(done ? .secondary : .primary)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityValue(done ? Text("Done") : Text(""))
+        .accessibilityValue(done ? Text("完成") : Text(""))
     }
 
     // MARK: Pages
@@ -305,13 +305,13 @@ struct OnboardingView: View {
             Image(systemName: "gamecontroller.fill").font(.system(size: 52)).foregroundStyle(.tint).accessibilityHidden(true)
             if model.since > 0 {
                 // After an update: only the pages added since this device last ran setup.
-                Text("New in Madeira").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                Text("Since you last ran setup, Madeira has something new to set up:").font(.title3)
+                Text("Madeira 新功能").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Text("上次运行设置向导后，Madeira 新增了需要配置的内容：").font(.title3)
             } else {
-                Text("Welcome to Madeira").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
-                Text("Madeira runs Windows games on your \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone").")
+                Text("欢迎使用 Madeira").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+                Text("Madeira 可在你的 \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone").")
                     .font(.title3)
-                Text("A few optional steps get you ready:").foregroundStyle(.secondary)
+                Text("只需完成几个可选步骤即可开始使用：").foregroundStyle(.secondary)
             }
             let offered = offeredSetupSteps
             ForEach(offered.indices, id: \.self) { index in point(index + 1, offered[index]) }
@@ -337,10 +337,10 @@ struct OnboardingView: View {
     private var localDevVPNPage: some View {
         VStack(alignment: .leading, spacing: 18) {
             header("Install LocalDevVPN", symbol: "network")
-            Text("Madeira enables JIT through LocalDevVPN, a free app that gives Madeira a network path to this \(device). Install it from the App Store, then come back.")
+            Text("Madeira 通过 LocalDevVPN 启用 JIT。LocalDevVPN 是一款免费 App，可为 Madeira 提供连接这台 \(device) 的网络通道。请先从 App Store 安装，然后返回此处。")
                 .fixedSize(horizontal: false, vertical: true)
             if localDevVPNInstalled {
-                Label("LocalDevVPN is installed", systemImage: "checkmark.circle.fill")
+                Label("已安装 LocalDevVPN", systemImage: "checkmark.circle.fill")
                     .font(.headline).foregroundStyle(.green)
                 primary("Continue", symbol: "arrow.right") { model.next() }
             } else {
@@ -371,7 +371,7 @@ struct OnboardingView: View {
     private var jitChoices: some View {
         VStack(alignment: .leading, spacing: 18) {
             header("Set up JIT", symbol: "bolt.fill")
-            Text("JIT lets Madeira run Windows code. Choose how your \(device) gets it.")
+            Text("JIT 可让 Madeira 运行 Windows 代码。请选择让这台 \(device) 启用 JIT 的方式。")
             VStack(spacing: 12) {
                 jitChoice("In-app", symbol: "iphone.radiowaves.left.and.right",
                           detail: !OnDevicePairing.isSupported ? "Needs iOS 27 or later."
@@ -401,7 +401,7 @@ struct OnboardingView: View {
                       done: pairedOnDevice)
             }
             if pairedOnDevice {
-                Label("Paired on this \(device)", systemImage: "checkmark.circle.fill")
+                Label("已在这台 \(device) 上完成配对", systemImage: "checkmark.circle.fill")
                     .font(.headline).foregroundStyle(.green)
                 vpnNote
                 primary("Continue", symbol: "arrow.right") { useBuiltIn() }
@@ -424,10 +424,10 @@ struct OnboardingView: View {
                 point(2, "Save it to Files or AirDrop it to this \(device).", done: fileImported)
                 point(3, "Tap **Choose pairing file** and pick it.", done: fileImported)
             }
-            Label("The pairing file is kept in this \(device)'s Keychain.", systemImage: "lock.fill")
+            Label("配对文件保存在这台 \(device) 的钥匙串中。", systemImage: "lock.fill")
                 .font(.subheadline).foregroundStyle(.secondary)
             if fileImported {
-                Label("Pairing file imported", systemImage: "checkmark.circle.fill")
+                Label("已导入配对文件", systemImage: "checkmark.circle.fill")
                     .font(.headline).foregroundStyle(.green)
                 vpnNote
                 primary("Continue", symbol: "arrow.right") { useBuiltIn() }
@@ -467,7 +467,7 @@ struct OnboardingView: View {
 
     private var vpnNoteLabel: some View {
         Label {
-            Text("Before you play, connect [LocalDevVPN](https://apps.apple.com/us/app/localdevvpn/id6755608044). Madeira enables JIT through it.")
+            Text("开始游戏前，请先连接 [LocalDevVPN](https://apps.apple.com/us/app/localdevvpn/id6755608044)。Madeira 会通过它启用 JIT。")
         } icon: {
             Image(systemName: "network")
         }
@@ -544,7 +544,7 @@ struct OnboardingView: View {
     private var shortcutPage: some View {
         VStack(alignment: .leading, spacing: 18) {
             header("Connect automatically", symbol: "bolt.horizontal.circle")
-            Text("With the \(JITNetworkShortcut.name) shortcut, Enable JIT connects LocalDevVPN for you, turns Cellular Data off while there's no Wi-Fi, and puts both back, along with any VPN you were using, once the game starts.")
+            Text("使用 \(JITNetworkShortcut.name) 快捷指令时，点按“启用 JIT”即可自动连接 LocalDevVPN。如果没有 Wi-Fi，快捷指令会暂时关闭蜂窝数据；游戏启动后会恢复蜂窝数据和之前使用的 VPN。")
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 14) {
                 point(1, "Install [LocalDevVPN](https://apps.apple.com/us/app/localdevvpn/id6755608044).",
@@ -556,7 +556,7 @@ struct OnboardingView: View {
                 LogStore.shared.log("[jit-shortcut] add: iCloud link")
                 UIApplication.shared.open(JITShortcutFile.iCloudLink)
             } label: {
-                Label("Add the shortcut", systemImage: "plus.square.on.square")
+                Label("添加快捷指令", systemImage: "plus.square.on.square")
                     .font(.body.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 36)
             }
             .buttonStyle(.bordered).controlSize(.large)
@@ -565,7 +565,7 @@ struct OnboardingView: View {
                 Button {
                     sharingShortcut = true
                 } label: {
-                    Text("No internet connection? Add local copy, then choose the Shortcuts app in the share sheet that pops up.")
+                    Text("没有网络连接？请先添加本地副本，然后在弹出的分享菜单中选择“快捷指令”App。")
                         .font(.footnote).frame(maxWidth: .infinity)
                 }
                 .sheet(isPresented: $sharingShortcut) {
@@ -574,7 +574,7 @@ struct OnboardingView: View {
                     }
                 }
             }
-            Toggle("Use it for JIT", isOn: $shortcut.enabled)
+            Toggle("将其用于 JIT", isOn: $shortcut.enabled)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(Color(uiColor: .secondarySystemGroupedBackground),
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -592,11 +592,11 @@ struct OnboardingView: View {
                  ? "When you start a game with Madeira Dock, Madeira hands this sign-in to Valve's own Steam client, which signs in and checks your license."
                  : "Madeira keeps a Steam sign-in so it can start your Steam games with your own account.")
             VStack(alignment: .leading, spacing: 10) {
-                Label("Your password goes only to Steam and is never saved.", systemImage: "lock.fill")
-                Label("The sign-in is kept in this device's Keychain until you sign out.", systemImage: "iphone")
+                Label("你的密码只会发送给 Steam，不会被保存。", systemImage: "lock.fill")
+                Label("登录状态会保存在本设备的钥匙串中，直到你退出登录。", systemImage: "iphone")
             }.font(.subheadline).foregroundStyle(.secondary)
             if let name = signIn.accountName {
-                Label("Signed in as \(name)", systemImage: "checkmark.circle.fill").font(.headline).foregroundStyle(.green)
+                Label("已登录为 \(name)", systemImage: "checkmark.circle.fill").font(.headline).foregroundStyle(.green)
                 primary("Continue", symbol: "arrow.right") { model.next() }
                 secondary("Use a different account") {
                     LogStore.shared.log("[onboarding] sign-in replaced")
@@ -612,13 +612,13 @@ struct OnboardingView: View {
     private var dockClientPage: some View {
         VStack(alignment: .leading, spacing: 18) {
             header("Prepare Madeira Dock", symbol: "shippingbox")
-            Text("Madeira Dock starts your installed Steam games through Valve's own Steam client, without the Steam desktop window. It needs the client's components, which Madeira downloads from Valve.")
+            Text("Madeira Dock 可通过 Valve 自家的 Steam 客户端启动已安装的 Steam 游戏，无需打开 Steam 桌面窗口。它需要客户端组件，Madeira 会从 Valve 下载这些组件。")
             if dock.clientInstalled {
-                Label("Valve's client components are installed.", systemImage: "checkmark.circle.fill")
+                Label("Valve 客户端组件已安装。", systemImage: "checkmark.circle.fill")
                     .font(.headline).foregroundStyle(.green)
                 primary("Continue", symbol: "arrow.right") { model.next() }
             } else {
-                Text("About 73 MB from Valve's update servers, checked against pinned SHA-256 sums. No Windows session runs for this.")
+                Text("从 Valve 更新服务器下载，大小约 73 MB，并使用固定的 SHA-256 校验值验证。此过程不会启动 Windows 会话。")
                     .font(.subheadline).foregroundStyle(.secondary)
                 if dock.preparing {
                     HStack(spacing: 12) { ProgressView(); Text(dock.progress).foregroundStyle(.secondary) }
@@ -642,13 +642,13 @@ struct OnboardingView: View {
     private var wineMonoPage: some View {
         VStack(alignment: .leading, spacing: 18) {
             header("Add .NET Framework support", symbol: "shippingbox.and.arrow.backward")
-            Text("Some Windows games are built on Microsoft's .NET Framework. Madeira runs them on Wine Mono, the Wine project's open-source .NET runtime.")
+            Text("部分 Windows 游戏基于 Microsoft .NET Framework 开发。Madeira 使用 Wine Mono 运行它们；Wine Mono 是 Wine 项目的开源 .NET 运行时。")
             if mono.installed {
-                Label("Wine Mono is installed.", systemImage: "checkmark.circle.fill")
+                Label("已安装 Wine Mono。", systemImage: "checkmark.circle.fill")
                     .font(.headline).foregroundStyle(.green)
                 primary("Continue", symbol: "arrow.right") { model.next() }
             } else {
-                Text("Madeira downloads it from WineHQ: about 42 MB, about 130 MB once installed. Most games do not need it; you can also add it later in Settings.")
+                Text("Madeira 会从 WineHQ 下载 Wine Mono，下载大小约 42 MB，安装后约占用 130 MB。大多数游戏不需要它，也可以稍后在“设置”中安装。")
                     .font(.subheadline).foregroundStyle(.secondary)
                 switch mono.phase {
                 case .downloading(let f), .installing(let f):
@@ -674,15 +674,15 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 18) {
             header("You're all set", symbol: "checkmark.seal.fill")
             if model.steps.contains(.jit) {
-                Text("You can change the JIT method or import a pairing file from Settings › JIT.")
+                Text("你可以在“设置”›“JIT”中更改 JIT 方式或导入配对文件。")
             }
             if model.steps.contains(.dockClient) {
-                Text("Settings › Steam › Madeira Dock lists the Steam games installed in Madeira's drive_c and starts them.")
+                Text("“设置”›“Steam”›“Madeira Dock”会列出 Madeira 的 drive_c 中已安装的 Steam 游戏，并可直接启动这些游戏。")
             }
             if model.steps.contains(.wineMono) {
-                Text("Settings › .NET Framework downloads or removes Wine Mono.")
+                Text("前往“设置”›“.NET Framework”可下载或移除 Wine Mono。")
             }
-            Text("You can run this setup again from Settings › JIT or Settings › Steam.").foregroundStyle(.secondary)
+            Text("你可以在“设置”›“JIT”或“设置”›“Steam”中重新运行此设置向导。").foregroundStyle(.secondary)
             primary("Go to your library", symbol: "square.grid.2x2.fill") { model.finish() }
         }
     }
@@ -710,9 +710,9 @@ struct SteamSettingsSection: View {
         Section {
             if let name = signIn.accountName {
                 LabeledContent15("Signed in as", value: name)
-                Button("Sign out of Steam", role: .destructive) { confirmSignOut = true }
+                Button("退出 Steam 登录", role: .destructive) { confirmSignOut = true }
             } else {
-                Button { open(.steamSignIn) } label: { Label("Sign in to Steam", systemImage: "person.crop.circle.badge.plus") }
+                Button { open(.steamSignIn) } label: { Label("登录 Steam", systemImage: "person.crop.circle.badge.plus") }
             }
             if MadeiraDock.enabled {
                 Button { open(.dock) } label: { Label("Madeira Dock", systemImage: "shippingbox") }
@@ -721,15 +721,15 @@ struct SteamSettingsSection: View {
                 }
             }
             if onboarding.available {
-                Button { onboarding.rerun() } label: { Label("Run setup again", systemImage: "wand.and.stars") }
+                Button { onboarding.rerun() } label: { Label("重新运行设置向导", systemImage: "wand.and.stars") }
             }
         } header: {
             Text("Steam")
         } footer: {
-            Text("Madeira keeps a Steam sign-in token in this device's Keychain, for this device only. Signing out removes it.")
+            Text("Madeira 会将 Steam 登录令牌保存在本设备的钥匙串中，仅供本设备使用。退出登录后会删除该令牌。")
         }
-        .confirmationDialog("Sign out of Steam?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-            Button("Sign out", role: .destructive) { signIn.signOut() }
+        .confirmationDialog("要退出 Steam 登录吗？", isPresented: $confirmSignOut, titleVisibility: .visible) {
+            Button("退出登录", role: .destructive) { signIn.signOut() }
         }
         .onAppear { signIn.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: SteamSignIn.didChange)) { _ in signIn.refresh() }

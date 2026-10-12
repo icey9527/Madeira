@@ -72,10 +72,10 @@ struct AllSettingsView: View {
         AppNavigationView {
             List {
                 Section {
-                    Text("Every other option Madeira reads from madeira.cfg. JIT pool, video memory, the swap tier, the sync engine and eco mode are in Settings › Memory & sync. Most options are read when Madeira starts, so close it from the app switcher after a change. Default leaves the option out of the file. Swipe left on a row to reset it.")
+                    Text("Madeira 从 madeira.cfg 读取其他所有选项。JIT 内存池、显存、交换内存等级、同步引擎和节能模式位于“设置”›“内存与同步”。大多数选项会在 Madeira 启动时读取，修改后请从应用切换器中彻底关闭并重新打开。选择“默认”会将该选项从文件中移除。向左轻扫某一行可将其重置。")
                         .font(.footnote).foregroundStyle(.secondary)
                     if changed {
-                        Text("Restart Madeira (close it from the app switcher) for changes to apply.").font(.footnote).foregroundStyle(.orange)
+                        Text("请从应用切换器中彻底关闭并重新打开 Madeira，以应用更改。").font(.footnote).foregroundStyle(.orange)
                     }
                 }
                 ForEach(ConfigCatalog.categories, id: \.self) { category in
@@ -95,30 +95,30 @@ struct AllSettingsView: View {
                                                                  category: "", note: "", choices: [], sources: []),
                                             value: binding(key))
                         }
-                    } header: { Text("Other entries in madeira.cfg") } footer: {
-                        Text("Set in your madeira.cfg but not read by name in Madeira's code, for example FEX options passed as env.FEX_*.")
+                    } header: { Text("madeira.cfg 中的其他条目") } footer: {
+                        Text("可以在 madeira.cfg 中设置，但 Madeira 不会按名称读取的选项，例如通过 env.FEX_* 传入的 FEX 选项。")
                     }
                 }
                 Section {
-                    TextField("key, or env.NAME", text: $newKey)
+                    TextField("键名，或 env.NAME", text: $newKey)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().font(.body.monospaced())
-                    TextField("value", text: $newValue)
+                    TextField("值", text: $newValue)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().font(.body.monospaced())
-                    Button("Add to madeira.cfg") {
+                    Button("添加到 madeira.cfg") {
                         let k = newKey.trimmingCharacters(in: .whitespaces)
                         guard !k.isEmpty, !k.contains("="), !k.hasPrefix("#") else { return }
                         binding(k).wrappedValue = newValue
                         newKey = ""; newValue = ""
                     }
                     .disabled(newKey.trimmingCharacters(in: .whitespaces).isEmpty)
-                } header: { Text("Add an entry") } footer: {
-                    Text("For anything not listed, such as env.FEX_TSOENABLED = 1.")
+                } header: { Text("添加条目") } footer: {
+                    Text("用于未列出的选项，例如 env.FEX_TSOENABLED = 1。")
                 }
             }
             .searchable(text: $search, prompt: "Search options")
-            .navigationTitle("All settings")
+            .navigationTitle("所有设置")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
             .onAppear { values = MadeiraConfig.all() }
         }
     }
@@ -139,13 +139,13 @@ struct ConfigOptionRow: View {
             }
             HStack(spacing: 8) {
                 if !option.title.isEmpty { Text(option.key).font(.caption2.monospaced()) }
-                if !option.defaultValue.isEmpty { Text("default \(option.defaultValue)").font(.caption2) }
-                if value != nil { Text("set").font(.caption2.weight(.semibold)).foregroundStyle(.tint) }
+                if !option.defaultValue.isEmpty { Text("默认值：\(option.defaultValue)").font(.caption2) }
+                if value != nil { Text("已设置").font(.caption2.weight(.semibold)).foregroundStyle(.tint) }
             }
             .foregroundStyle(.secondary)
         }
         .swipeActions {
-            if value != nil { Button("Reset", role: .destructive) { value = nil; draft = "" } }
+            if value != nil { Button("重置", role: .destructive) { value = nil; draft = "" } }
         }
     }
 
@@ -153,21 +153,21 @@ struct ConfigOptionRow: View {
         switch option.kind {
         case .bool:
             Picker(option.displayTitle, selection: Binding(get: { value ?? "" }, set: { value = $0.isEmpty ? nil : $0 })) {
-                Text("Default").tag("")
-                Text("On").tag("1")
-                Text("Off").tag("0")
+                Text("默认").tag("")
+                Text("开启").tag("1")
+                Text("关闭").tag("0")
                 if let v = value, !["1", "0"].contains(v) { Text(v).tag(v) }
             }
         case .choice:
             Picker(option.displayTitle, selection: Binding(get: { value ?? "" }, set: { value = $0.isEmpty ? nil : $0 })) {
                 ForEach(option.choices, id: \.self) { Text($0.label).tag($0.value) }
-                if let v = value, !option.choices.contains(where: { $0.value == v }) { Text("Custom: \(v)").tag(v) }
+                if let v = value, !option.choices.contains(where: { $0.value == v }) { Text("自定义：\(v)").tag(v) }
             }
         case .int, .text:
             HStack {
                 Text(option.displayTitle).lineLimit(2)
                 Spacer(minLength: 12)
-                TextField("Default", text: $draft)
+                TextField("默认", text: $draft)
                     .multilineTextAlignment(.trailing)
                     .keyboardType(option.kind == .int ? .numbersAndPunctuation : .default)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -213,16 +213,16 @@ struct SettingsSearchResults: View {
         let hits = self.hits
         Section {
             if hits.isEmpty {
-                Text("No other options match \u{201C}\(query)\u{201D}.").foregroundStyle(.secondary)
+                Text("没有其他选项符合“\(query)”。").foregroundStyle(.secondary)
             }
             ForEach(hits.prefix(Self.limit)) { ConfigOptionRow(option: $0, value: binding($0.key)) }
         } header: {
             Text(hits.isEmpty ? "Options" : "Options (\(hits.count))")
         } footer: {
             if hits.count > Self.limit {
-                Text("Showing \(Self.limit) of \(hits.count). Refine the search, or open All settings.")
+                Text("当前显示 \(Self.limit) 项，共找到 \(hits.count) 项。请缩小搜索范围，或打开“所有设置”。")
             } else if !hits.isEmpty {
-                Text("Most options are read when Madeira starts: close it from the app switcher after a change.")
+                Text("大多数选项会在 Madeira 启动时读取。修改后，请从应用切换器中彻底关闭并重新打开。")
             }
         }
         .onChange(of: refresh) { _ in values = MadeiraConfig.all() }

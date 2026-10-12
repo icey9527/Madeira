@@ -510,36 +510,36 @@ struct ControlLayoutMenu: View {
                 menu
             }
         }
-        .alert("Keep the current controls?", isPresented: shown($pending)) {
+        .alert("保留当前控件设置？", isPresented: shown($pending)) {
             if !presets.readOnly {
-                Button("Keep as \u{201C}\(presets.store.nextCustomName())\u{201D}") {
+                Button("保存为“\(presets.store.nextCustomName())”") {
                     let choice = pending
                     pending = nil
                     presets.keepCurrent()
                     perform(choice)
                 }
             }
-            Button("Replace", role: .destructive) {
+            Button("替换", role: .destructive) {
                 let choice = pending
                 pending = nil
                 perform(choice)
             }
-            Button("Cancel", role: .cancel) { pending = nil }
+            Button("取消", role: .cancel) { pending = nil }
         } message: {
-            Text("The controls on screen are not saved in a layout.")
+            Text("屏幕上的控件尚未保存为布局。")
         }
-        .alert("Delete \u{201C}\(confirmDelete?.name ?? "")\u{201D}?", isPresented: shown($confirmDelete)) {
-            Button("Delete", role: .destructive) {
+        .alert("删除“\(confirmDelete?.name ?? "")\u{201D}?", isPresented: shown($confirmDelete)) {
+            Button("删除", role: .destructive) {
                 if let p = confirmDelete, presets.delete(p.id) { didChoose?(false) }
                 confirmDelete = nil
             }
-            Button("Cancel", role: .cancel) { confirmDelete = nil }
+            Button("取消", role: .cancel) { confirmDelete = nil }
         }
     }
 
     private var menu: some View {
         Menu {
-            Section("Controller layout") {
+            Section("手柄布局") {
                 ForEach(presets.available) { p in
                     Button { request(.load(p.id)) } label: {
                         if m.layoutID == p.id { Label(p.name, systemImage: "checkmark") }
@@ -549,12 +549,12 @@ struct ControlLayoutMenu: View {
                 }
             }
             if !presets.readOnly {
-                Button { request(.create) } label: { Label("Create new layout", systemImage: "plus") }
+                Button { request(.create) } label: { Label("新建布局", systemImage: "plus") }
             }
             if let a = presets.active, !ControlPresetStore.isBuiltIn(a.id), !presets.readOnly {
                 Button(role: .destructive) {
                     confirmDelete = a
-                } label: { Label("Delete \u{201C}\(a.name)\u{201D}", systemImage: "trash") }
+                } label: { Label("删除“\(a.name)”", systemImage: "trash") }
             }
         } label: {
             switch style {
@@ -572,7 +572,7 @@ struct ControlLayoutMenu: View {
                 }
             }
         }
-        .accessibilityLabel("Controller layout")
+        .accessibilityLabel("手柄布局")
     }
 
     private func shown<T>(_ b: Binding<T?>) -> Binding<Bool> {

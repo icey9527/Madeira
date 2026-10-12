@@ -336,12 +336,12 @@ struct OnDevicePairingPanel: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     ProgressView()
-                    Text("Waiting for your \(device)…").font(.headline)
+                    Text("正在等待你的 \(device)…").font(.headline)
                 }
-                Text("Open Settings › Privacy & Security › Developer Mode, scroll down and tap **Pair with \(OnDevicePairing.hostName)**. Keep Wi-Fi on.")
+                Text("打开“设置”›“隐私与安全性”›“开发者模式”，向下滚动，然后点按 **与 \(OnDevicePairing.hostName) 配对**。请保持 Wi-Fi 开启。")
                     .font(.subheadline).fixedSize(horizontal: false, vertical: true)
                 if pairing.backgroundLimited {
-                    Text("This installation can only wait about 30 seconds in the background, so go to Settings straight away.")
+                    Text("此安装过程在后台最多只能持续约 30 秒，请立即前往“设置”继续操作。")
                         .font(.footnote).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                 }
                 cancel
@@ -349,15 +349,15 @@ struct OnDevicePairingPanel: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case .pin(let pin):
             VStack(spacing: 8) {
-                Text("Enter this code on your \(device)").font(.subheadline)
+                Text("在你的 \(device) 上输入此代码").font(.subheadline)
                 Text(pin).font(.system(size: 40, weight: .bold, design: .monospaced)).tracking(6)
                     .textSelection(.enabled)
-                    .accessibilityLabel("Pairing code \(pin.map(String.init).joined(separator: " "))")
+                    .accessibilityLabel("配对码：\(pin.map(String.init).joined(separator: " "))")
                 cancel
             }
             .frame(maxWidth: .infinity)
         case .paired(let name):
-            Label("Paired with \(name)", systemImage: "checkmark.circle.fill")
+            Label("已与 \(name) 配对", systemImage: "checkmark.circle.fill")
                 .font(.headline).foregroundStyle(.green)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .failed(let message):
@@ -368,7 +368,7 @@ struct OnDevicePairingPanel: View {
     }
 
     private var cancel: some View {
-        Button("Cancel pairing", role: .cancel) { pairing.cancel() }
+        Button("取消配对", role: .cancel) { pairing.cancel() }
             .font(.subheadline.weight(.semibold))
     }
 }

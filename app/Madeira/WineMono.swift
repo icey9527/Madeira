@@ -433,7 +433,7 @@ struct WineMonoSettingsSection: View {
             }
             if !WineMonoModel.bundled && !mono.busy {
                 if mono.installed {
-                    Button("Remove Wine Mono", role: .destructive) { confirmRemove = true }
+                    Button("移除 Wine Mono", role: .destructive) { confirmRemove = true }
                 } else {
                     Button { mono.install() } label: {
                         Label(mono.error == nil ? "Download Wine Mono" : "Try again", systemImage: "arrow.down.circle")
@@ -443,12 +443,12 @@ struct WineMonoSettingsSection: View {
         } header: {
             Text(".NET Framework")
         } footer: {
-            Text("Games built on Microsoft's .NET Framework run on Wine Mono, the Wine project's open-source .NET runtime. Madeira downloads it from WineHQ: about 42 MB, about 130 MB once installed.")
+            Text("基于 Microsoft .NET Framework 开发的游戏会通过 Wine Mono 运行；它是 Wine 项目的开源 .NET 运行时。Madeira 会从 WineHQ 下载，下载大小约 42 MB，安装后约占用 130 MB。")
         }
-        .confirmationDialog("Remove Wine Mono?", isPresented: $confirmRemove, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) { mono.remove() }
+        .confirmationDialog("要移除 Wine Mono 吗？", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("移除", role: .destructive) { mono.remove() }
         } message: {
-            Text(".NET Framework games will not start until you download it again.")
+            Text("需要重新下载 .NET Framework 后才能启动这类游戏。")
         }
         .onAppear { mono.refresh() }
     }
