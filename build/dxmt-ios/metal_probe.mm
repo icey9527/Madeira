@@ -13,6 +13,8 @@
 #import <dispatch/dispatch.h>
 
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -30,6 +32,17 @@ namespace {
  * before anything was written, and a crash inside the probe cannot be reported
  * by the caller.  Appending + fflush means the last line survives. */
 std::string g_progress_path;
+
+/* POSIX-only, and the very first thing the entry point does: if the app dies
+ * before this file exists, the call itself never ran (Swift/C mismatch or a
+ * load-time problem), which is a different bug from a crash inside the probe. */
+void trace_posix(const std::string &path, const char *what) {
+    int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    (void)write(fd, what, strlen(what));
+    (void)write(fd, "\n", 1);
+    close(fd);
+}
 void progress(const std::string &line) {
     if (g_progress_path.empty()) return;
     FILE *f = fopen(g_progress_path.c_str(), "a");
@@ -156,6 +169,16 @@ std::string airconv_fixture(const std::string &dir, const std::string &name, int
 
 extern "C" int madeira_metal_probe_run(const char *dir, const char *mode_text,
                                        char *report, unsigned report_cap) {
+    /* Both of these are POSIX-only and come before any C++ object exists, so
+     * they survive a crash, an abort or a kill: entry.txt says the entry point
+     * was reached, stderr.txt catches whatever LLVM prints before it dies. */
+    std::string dir_str = dir ? dir : "";
+    trace_posix(dir_str + "/entry.txt", "entry reached");
+    {
+        int fd = open((dir_str + "/stderr.txt").c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd >= 0) { dup2(fd, STDERR_FILENO); close(fd); }
+    }
+
     std::string text = "airconv + Metal probe (metal_version ";
     text += (mode_text && strcmp(mode_text, "320") == 0) ? "3.2" : "3.1";
     text += "):\n";

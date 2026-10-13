@@ -14,6 +14,8 @@
 #include "metallib_writer.hpp"
 #include "dxbc_converter.hpp"
 
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Error.h"
@@ -25,6 +27,22 @@
 #include <vector>
 
 using namespace llvm;
+
+/* Collects whatever LLVM would otherwise print, and never aborts: the module
+ * this probe builds is the one Apple's Metal compiler reads, so its diagnostics
+ * are the interesting part. */
+struct RecordingDiagnosticHandler : public llvm::DiagnosticHandler {
+    std::string *out;
+    explicit RecordingDiagnosticHandler(std::string *o) : out(o) {}
+    bool handleDiagnostics(const llvm::DiagnosticInfo &info) override {
+        llvm::raw_string_ostream stream(*out);
+        llvm::DiagnosticPrinterRawOStream printer(stream);
+        info.print(printer);
+        stream << '\n';
+        stream.flush();
+        return true;
+    }
+};
 
 namespace dxmt::dxbc {
 /* airconv_cli.cpp declares this itself: it is not in a header. */
@@ -39,12 +57,19 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                                      char *ir, unsigned ir_cap, unsigned *ir_len,
                                      char *note, unsigned note_cap) {
     std::string text;
+    std::string raw_diag;
     std::string ir_text;
     std::vector<char> bytes;
 
     if (!dxbc || !len) { text = "no DXBC"; }
     else {
         LLVMContext context;
+        /* Record diagnostics instead of letting the default handler abort the
+         * process: airconv's own LLVM is the first one to see this module, so a
+         * fatal diagnostic here is the message the Metal compiler would also
+         * have complained about -- and the last version of this probe died
+         * before it could say anything. */
+        context.setDiagnosticHandler(std::make_unique<RecordingDiagnosticHandler>(&raw_diag));
         Module module("default", context);
         dxmt::initializeModule(module);
 
@@ -69,6 +94,14 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                 text = std::string("convertDXBC: ") + toString(std::move(e));
             } else {
                 dxmt::runOptimizationPasses(module);
+                {
+                    std::string verify_text;
+                    llvm::raw_string_ostream vstream(verify_text);
+                    if (llvm::verifyModule(module, &vstream)) {
+                        text = std::string("verifyModule: ") + verify_text;
+                    }
+                    vstream.flush();
+                }
                 dxmt::linkMSAD(module);
                 dxmt::linkSamplePos(module);
                 dxmt::linkTessellation(module);
@@ -103,6 +136,10 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
         size_t n = ir_text.size() < ir_cap ? ir_text.size() : ir_cap;
         memcpy(ir, ir_text.data(), n);
     }
+    /* The diagnostics ride along in the report without changing the verdict:
+     * warnings are normal here, and only a failed conversion is a failure. */
+    bool ok = (text == "ok");
+    if (!raw_diag.empty()) text += (ok ? " | diagnostics: " : " | diagnostics: ") + raw_diag;
     if (note && note_cap) { strncpy(note, text.c_str(), note_cap - 1); note[note_cap - 1] = 0; }
-    return text == "ok" ? 0 : -1;
+    return ok ? 0 : -1;
 }
