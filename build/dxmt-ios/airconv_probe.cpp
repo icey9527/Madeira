@@ -36,8 +36,10 @@ llvm::Error convertDXBC(
 
 extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                                      void *out, unsigned out_cap, unsigned *out_len,
+                                     char *ir, unsigned ir_cap, unsigned *ir_len,
                                      char *note, unsigned note_cap) {
     std::string text;
+    std::string ir_text;
     std::vector<char> bytes;
 
     if (!dxbc || !len) { text = "no DXBC"; }
@@ -76,6 +78,15 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                 writer.Write(module, stream);
                 stream.flush();
                 bytes.assign(bitcode.begin(), bitcode.end());
+                /* The IR text is what lets a failing shader be diffed against the
+                 * ones Apple's LLVM accepts: the compiler service aborts inside
+                 * its own LLVM while reading the module, so the construct it
+                 * chokes on is in here. */
+                std::string ir;
+                raw_string_ostream ir_stream(ir);
+                module.print(ir_stream, nullptr);
+                ir_stream.flush();
+                ir_text = ir;
                 text = "ok";
             }
             SM50Destroy(sm50);
@@ -86,6 +97,11 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
     if (out && out_cap) {
         if (bytes.size() > out_cap) text = "output buffer too small";
         else if (!bytes.empty()) memcpy(out, bytes.data(), bytes.size());
+    }
+    if (ir_len) *ir_len = (unsigned)ir_text.size();
+    if (ir && ir_cap && !ir_text.empty()) {
+        size_t n = ir_text.size() < ir_cap ? ir_text.size() : ir_cap;
+        memcpy(ir, ir_text.data(), n);
     }
     if (note && note_cap) { strncpy(note, text.c_str(), note_cap - 1); note[note_cap - 1] = 0; }
     return text == "ok" ? 0 : -1;

@@ -286,10 +286,20 @@ enum MetalSelfTest {
         // shape airconv emits can be bisected without Wine or D3D11.
         let probeDir = docs.appendingPathComponent("airconv-probe")
         if fm.fileExists(atPath: probeDir.path) {
+            // Written as we go: last time the app died before anything was
+            // written, and a crash inside the probe cannot be reported by the
+            // code that called it.  The probe appends its own progress.txt too.
+            let swiftLog = probeDir.appendingPathComponent("swift.txt")
+            func note(_ line: String) {
+                let existing = (try? String(contentsOf: swiftLog, encoding: .utf8)) ?? ""
+                try? (existing + line + "\n").write(to: swiftLog, atomically: true, encoding: .utf8)
+            }
+            note("about to call the probe")
             var report = [CChar](repeating: 0, count: 8192)
             let rc = probeDir.path.withCString { path in
                 madeira_metal_probe_run(path, "310", &report, UInt32(report.count))
             }
+            note("probe returned rc=\(rc)")
             text += "probe rc=\(rc)\n" + String(cString: report)
         }
 

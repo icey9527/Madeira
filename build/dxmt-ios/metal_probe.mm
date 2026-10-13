@@ -21,9 +21,23 @@
 
 extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                                      void *out, unsigned out_cap, unsigned *out_len,
+                                     char *ir, unsigned ir_cap, unsigned *ir_len,
                                      char *note, unsigned note_cap);
 
 namespace {
+
+/* Progress goes to a file as it happens: the last time this ran the app died
+ * before anything was written, and a crash inside the probe cannot be reported
+ * by the caller.  Appending + fflush means the last line survives. */
+std::string g_progress_path;
+void progress(const std::string &line) {
+    if (g_progress_path.empty()) return;
+    FILE *f = fopen(g_progress_path.c_str(), "a");
+    if (!f) return;
+    fputs(line.c_str(), f);
+    fputc('\n', f);
+    fclose(f);
+}
 
 bool read_file(const std::string &path, std::vector<char> &out) {
     FILE *f = fopen(path.c_str(), "rb");
@@ -109,19 +123,32 @@ int metal_pipeline(const std::vector<char> &vs, const std::vector<char> &ps,
 
 std::string airconv_fixture(const std::string &dir, const std::string &name, int mode,
                             std::vector<char> &metallib) {
+    progress(name + ": read");
     std::vector<char> dxbc;
     if (!read_file(dir + "/" + name, dxbc)) return "cannot read";
+    progress(name + ": " + std::to_string(dxbc.size()) + " bytes of DXBC");
     std::string note(512, 0);
     unsigned out_len = 0;
     int rc = madeira_airconv_probe(dxbc.data(), (unsigned)dxbc.size(), mode,
-                                   nullptr, 0, &out_len, &note[0], (unsigned)note.size());
-    if (out_len == 0) return "airconv: " + note;
-    note.assign(512, 0);
+                                   nullptr, 0, &out_len, nullptr, 0, nullptr,
+                                   &note[0], (unsigned)note.size());
+    if (out_len == 0) { progress(name + ": airconv produced nothing: " + note); return "airconv: " + note; }
+    progress(name + ": airconv wants " + std::to_string(out_len) + " bytes");
+    std::vector<char> ir(1u << 22);
+    unsigned ir_len = 0;
     metallib.resize(out_len);
+    note.assign(512, 0);
     rc = madeira_airconv_probe(dxbc.data(), (unsigned)dxbc.size(), mode,
                                metallib.data(), (unsigned)metallib.size(), &out_len,
+                               ir.data(), (unsigned)ir.size(), &ir_len,
                                &note[0], (unsigned)note.size());
-    if (rc != 0) return "airconv: " + note;
+    if (rc != 0) { progress(name + ": airconv FAILED: " + note); return "airconv: " + note; }
+    if (ir_len) {
+        FILE *f = fopen((dir + "/" + name + ".ll").c_str(), "wb");
+        if (f) { fwrite(ir.data(), 1, ir_len, f); fclose(f); }
+    }
+    progress(name + ": airconv OK, " + std::to_string(metallib.size()) + " bytes of metallib, " +
+             std::to_string(ir_len) + " bytes of IR");
     return "";
 }
 
@@ -134,6 +161,9 @@ extern "C" int madeira_metal_probe_run(const char *dir, const char *mode_text,
     text += "):\n";
     int mode = (mode_text && strcmp(mode_text, "320") == 0) ? 1 : 0;
     int failures = 0;
+
+    g_progress_path = std::string(dir) + "/progress.txt";
+    progress("--- run start, mode " + std::to_string(mode) + " ---");
 
     std::vector<std::string> vs_files = dxbc_files(dir, "vs_");
     std::vector<std::string> ps_files = dxbc_files(dir, "ps_");
@@ -160,11 +190,14 @@ extern "C" int madeira_metal_probe_run(const char *dir, const char *mode_text,
         text += ps_files[i] + ": airconv OK, " + std::to_string(ps_metallib.size()) + " bytes";
         if (!device || vs_metallib.empty()) { text += " | skipped Metal\n"; failures++; continue; }
         std::string note;
+        progress(ps_files[i] + ": Metal library + pipeline start");
         int rc = metal_pipeline(vs_metallib, ps_metallib, device, note);
+        progress(ps_files[i] + ": Metal rc=" + std::to_string(rc) + " note=" + note);
         if (rc != 0) { text += " | Metal FAILED: " + note + "\n"; failures++; }
         else text += " | " + note + "\n";
     }
 
+    progress(std::string("--- run end, failures=") + std::to_string(failures) + " ---");
     if (report && report_cap) { strncpy(report, text.c_str(), report_cap - 1); report[report_cap - 1] = 0; }
     return failures ? 1 : 0;
 }
