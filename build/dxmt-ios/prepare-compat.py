@@ -50,9 +50,18 @@ print(f'iOS {sys.argv[3]} optional Metal cache symbols: {relative}')
 # iOS 15 (Madeira port): MTLCopyAllDevices exists on iOS only from 18.0 and is
 # weak-imported, so below that it binds to NULL and an unconditional call jumps
 # to address 0 (measured on the device: D3D11 device enumeration crashed inside
-# this function with pc=0).  Test the imported address itself, the way cache.c
-# above does; below iOS 18 there is one device, returned as a +1 array so the
-# Copy rule the callers release by still holds.
+# this function with pc=0).  Below iOS 18 there is one device, returned as a +1
+# array so the Copy rule the callers release by still holds.
+#
+# The @available() form is deliberate.  A plain NULL test is the idiom for a
+# weak import, but Metal's header declares this function without weak_import
+# (the SDK's .tbd marks the symbol weak, the declaration does not), so clang
+# warns -Wpointer-bool-conversion, folds the test to true and deletes the
+# fallback -- shipping the same jump to 0 from a build that looks clean.  With
+# @available() the compiler must emit a runtime version check, and the fallback
+# stays reachable (checked with clang -target arm64-apple-ios15.6: only this
+# form keeps -initWithObjects:count: in the object, which is what
+# build/dxmt-ios/build.sh and tools/ci/verify-startup.sh now require).
 #
 # Both edits to this one file share a buffer and it is written once, and the
 # written file is read back and checked.  That is not belt-and-braces: the
@@ -67,7 +76,7 @@ original = '  params->ret = (obj_handle_t)MTLCopyAllDevices();\n'
 replacement = (
     '  /* iOS < 18: MTLCopyAllDevices is weak-imported and NULL; use the one\n'
     '   * device there is, as a +1 array (the Copy rule the callers release). */\n'
-    '  if (MTLCopyAllDevices) {\n'
+    '  if (@available(macOS 10.11, iOS 18.0, *)) {\n'
     '    params->ret = (obj_handle_t)MTLCopyAllDevices();\n'
     '  } else {\n'
     '    id<MTLDevice> device = MTLCreateSystemDefaultDevice();\n'
@@ -82,7 +91,7 @@ source = source.replace(original, replacement)
 # Receipts: both must be in the file this script leaves behind.  The first one
 # is also what tools/ci/verify-startup.sh greps the built dylib for, and the
 # second is the name of the helper the block below injects.
-mtlcad_marker = 'if (MTLCopyAllDevices) {'
+mtlcad_marker = 'if (@available(macOS 10.11, iOS 18.0, *)) {'
 print(f'iOS {sys.argv[3]} optional MTLCopyAllDevices: {relative}')
 
 # iOS 15 (Madeira port) EXPERIMENT: MTLResource.gpuResourceID is a Metal 3

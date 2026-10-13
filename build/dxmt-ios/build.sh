@@ -392,7 +392,9 @@ echo "Staged: $APP_COPY ($(wc -c < "$APP_COPY" | tr -d ' ') bytes)"
 # source and overwrote it).  The fallback's -initWithObjects:count: selector is
 # its receipt in the compiled object; without it the archive is not shippable.
 if ! strings "$APP_COPY" | grep -q 'initWithObjects:count:'; then
-    echo "::error::libdxmt_combined.a has no MTLCopyAllDevices fallback -- prepare-compat.py's winemetal rewrite is not in the objects"
+    echo "::error::libdxmt_combined.a has no MTLCopyAllDevices fallback -- either prepare-compat.py's winemetal rewrite is not in the objects, or its guard folded the fallback away (see the comment in prepare-compat.py about the NULL test)"
+    echo "  compat winemetal_unix.c MTLCreateSystemDefaultDevice hits: $(grep -c MTLCreateSystemDefaultDevice "$BUILD_DIR/compat-src/winemetal/unix/winemetal_unix.c" 2>/dev/null || true)"
+    echo "  winemetal_unix.o initWithObjects:count: hits: $(strings "$OBJ_DIR/winemetal_unix.o" 2>/dev/null | grep -c 'initWithObjects:count:' || true)"
     exit 1
 fi
 echo "MTLCopyAllDevices fallback: present in $APP_COPY"
