@@ -410,7 +410,12 @@ if ! LC_ALL=C grep -aq 'air64-apple-ios15.0.0' "$APP_COPY"; then
     exit 1
 fi
 for ac_obj in airconv_context dxbc_converter dxso_compile ffp_compile metallib_writer; do
-    if ! LC_ALL=C grep -aq 'air64-apple-ios15.0.0' "$OBJ_DIR/$ac_obj.o"; then
+    # metallib_writer.cpp writes the MTLB container header and names no AIR
+    # triple at all; its iOS stamps are numeric and are receipted by
+    # prepare-compat.py's read-back, so only the four that do carry a triple are
+    # required to show it.
+    if [ "$ac_obj" != metallib_writer ] \
+       && ! LC_ALL=C grep -aq 'air64-apple-ios15.0.0' "$OBJ_DIR/$ac_obj.o"; then
         echo "::error::$ac_obj.o has no iOS AIR target -- prepare-compat.py's airconv rewrite is not in it"
         exit 1
     fi
@@ -419,4 +424,4 @@ for ac_obj in airconv_context dxbc_converter dxso_compile ffp_compile metallib_w
         exit 1
     fi
 done
-echo "AIR stamps: air64-apple-ios15.0.0 in every airconv object, no macOS AIR target"
+echo "AIR stamps: air64-apple-ios15.0.0 in the airconv objects that carry one, no macOS AIR target"
