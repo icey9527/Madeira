@@ -1,4 +1,5 @@
 import Foundation
+import Metal
 import Security
 import UIKit
 
@@ -179,5 +180,121 @@ enum DeviceDiagnostics {
     /// At each launch: the values that change while the app runs.
     static func logLaunch() {
         LogStore.shared.log("[device] launch: \(signing()) \(addressMap()) available=\(jit_available_memory() >> 20)MB \(power())")
+    }
+}
+
+
+/// TEMPORARY bring-up diagnostic (2026-10-13).  Decides whether iOS 15.6's own
+/// Metal compiler accepts the shader shapes a Direct3D-to-Metal backend needs.
+///
+/// Context: the D3D11 path builds its pipelines through DXMT's airconv, and the
+/// Metal compiler dies with "Compiler encountered an internal error" as soon as
+/// a fragment shader READS a texture (`Load` and `Sample` alike), while merely
+/// *binding* a texture or sampler is fine (measured, five-shipped-test narrowing
+/// on this device).  Two candidates remain, and they lead to opposite
+/// decisions: either the OS compiler cannot handle these shapes at all (move the
+/// backend to Vulkan/MoltenVK), or DXMT emits a shape it cannot handle, i.e.
+/// Metal 3 style resource ids / argument-buffer metadata (keep DXMT and fix its
+/// codegen).  Wine and DXMT are not in this path, so the answer is about the OS.
+///
+/// Triggered without any UI change: while `Documents/metal-selftest.marker`
+/// exists, the next launch runs the test, writes `Documents/metal-selftest.txt`
+/// and removes the marker.
+enum MetalSelfTest {
+    private static let vertexSource = """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct VSOut { float4 pos [[position]]; float2 uv; };
+    vertex VSOut vmain(uint vid [[vertex_id]]) {
+        float2 t[3] = { float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0) };
+        VSOut o;
+        o.pos = float4(t[vid], 0.0, 1.0);
+        o.uv = o.pos.xy * 0.5 + 0.5;
+        return o;
+    }
+    """
+
+    private static var fragmentSources: [(String, String)] {
+        let header = """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct VSOut { float4 pos [[position]]; float2 uv; };
+        """
+        return [
+            ("A-control", header + """
+            fragment float4 fmain(VSOut in [[stage_in]]) { return float4(0.0, 1.0, 0.0, 1.0); }
+            """),
+            ("B-direct-sample", header + """
+            fragment float4 fmain(VSOut in [[stage_in]], texture2d<float> tex [[texture(0)]], sampler smp [[sampler(0)]]) {
+                return tex.sample(smp, in.uv);
+            }
+            """),
+            ("C-direct-read", header + """
+            fragment float4 fmain(VSOut in [[stage_in]], texture2d<float> tex [[texture(0)]]) {
+                return tex.read(uint2(in.pos.xy));
+            }
+            """),
+            ("D-argument-buffer", header + """
+            struct Args { texture2d<float> tex [[id(0)]]; sampler smp [[id(1)]]; };
+            fragment float4 fmain(VSOut in [[stage_in]], constant Args &args [[buffer(0)]]) {
+                return args.tex.sample(args.smp, in.uv);
+            }
+            """),
+        ]
+    }
+
+    static func runIfRequested() {
+        let fm = FileManager.default
+        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let marker = docs.appendingPathComponent("metal-selftest.marker")
+        guard fm.fileExists(atPath: marker.path) else { return }
+
+        var text = "metal self test \(Date())\n"
+        defer {
+            try? text.write(to: docs.appendingPathComponent("metal-selftest.txt"), atomically: true, encoding: .utf8)
+            try? fm.removeItem(at: marker)
+        }
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            text += "no Metal device\n"
+            return
+        }
+        text += "device: \(device.name)\n"
+
+        let vs: MTLFunction
+        do {
+            let lib = try device.makeLibrary(source: vertexSource, options: nil)
+            guard let fn = lib.makeFunction(name: "vmain") else {
+                text += "vertex library compiled but vmain is missing\n"
+                return
+            }
+            vs = fn
+            text += "vertex library: OK\n"
+        } catch {
+            text += "vertex library FAILED: \(error)\n"
+            return
+        }
+
+        for (name, source) in fragmentSources {
+            do {
+                let lib = try device.makeLibrary(source: source, options: nil)
+                guard let fn = lib.makeFunction(name: "fmain") else {
+                    text += "\(name): compiled, but fmain is missing\n"
+                    continue
+                }
+                let desc = MTLRenderPipelineDescriptor()
+                desc.vertexFunction = vs
+                desc.fragmentFunction = fn
+                desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+                do {
+                    _ = try device.makeRenderPipelineState(descriptor: desc)
+                    text += "\(name): library OK, pipeline OK\n"
+                } catch {
+                    text += "\(name): library OK, pipeline FAILED: \(error)\n"
+                }
+            } catch {
+                text += "\(name): library FAILED: \(error)\n"
+            }
+        }
     }
 }

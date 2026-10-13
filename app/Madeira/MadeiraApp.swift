@@ -8,6 +8,9 @@ struct MadeiraApp: App {
         // default Resolution comes from it, are also made on other threads.
         _ = ResolutionChoices.screen
         madeira_startup_log("startup-v2: SwiftUI App init complete")
+        // Bring-up diagnostic (see MetalSelfTest): runs only while the marker
+        // file exists, off the main thread so launch stays fast.
+        DispatchQueue.global(qos: .utility).async { MetalSelfTest.runIfRequested() }
     }
 
     var body: some Scene {
