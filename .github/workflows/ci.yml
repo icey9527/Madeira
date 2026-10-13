@@ -359,6 +359,11 @@ jobs:
       - name: Verify committed upstream compatibility layers
         run: python3 tools/ci/verify-upstream-compat.py app/Madeira
 
+      - name: DXMT PE（arm64ec d3d11.dll，内嵌库编成 iOS Metal）
+        id: dxmt-pe
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.dxmt.outcome == 'success' }}
+        run: bash build/dxmt-pe/build.sh > >(tee ci-logs/dxmt-pe.log) 2>&1
+
       - name: app（xcodebuild 编译冒烟）
         id: app
         run: tools/ci/build-all.sh app

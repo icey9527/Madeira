@@ -123,7 +123,7 @@ stage_deps() {
   if [ "$APP_ONLY" = 1 ]; then
     echo "  [app-only] 跳过（VC++ 运行时资源不参与源码编译）"
   else
-    tic; brew install bison flex sevenzip ccache; toc "deps:brew-install"
+    tic; brew install bison flex sevenzip ccache meson ninja; toc "deps:brew-install"
   fi
 
   step "llvm-mingw $LLVM_MINGW_VER 工具链"
