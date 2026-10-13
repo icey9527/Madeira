@@ -325,13 +325,19 @@ jobs:
         if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
         run: echo "sha=$(git ls-tree HEAD dxmt | awk '{print $3}')" >> "$GITHUB_OUTPUT"
 
+      # Every file in build/dxmt-ios/ is an input to the archive, so the key takes
+      # the whole directory.  Naming files one by one is how the probe's
+      # airconv_probe.cpp / metal_probe.mm were left out: the cache kept returning
+      # an archive built without them and CI stayed green.  (Nothing generated lives
+      # at this level -- obj/, compat-src/ and the .a files are ignored and absent
+      # on a fresh runner, so '**' sees exactly the checked-in sources.)
       - name: Restore completed DXMT
         id: dxmt-cache
         if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
         uses: actions/cache/restore@v4
         with:
           path: app/Madeira/libdxmt_combined.a
-          key: dxmt-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/dxmt-ios/build.sh', 'build/dxmt-ios/prepare-compat.py', 'build/llvm-ios/build.sh', 'build/madeira-d3d12/deps.sh', 'madeira-d3d12/src/**', 'madeira-d3d12/tests/native/msc_canary.mm', 'madeira-d3d12/third_party/metal-shader-converter/**', 'app/Madeira/d3d12/libmetalirconverter.dylib') }}
+          key: dxmt-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/dxmt-ios/**', 'build/llvm-ios/build.sh', 'build/madeira-d3d12/deps.sh', 'madeira-d3d12/src/**', 'madeira-d3d12/tests/native/msc_canary.mm', 'madeira-d3d12/third_party/metal-shader-converter/**', 'app/Madeira/d3d12/libmetalirconverter.dylib') }}
 
       - name: DXMT（真实图形静态库）
         id: dxmt

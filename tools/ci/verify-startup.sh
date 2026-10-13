@@ -193,3 +193,41 @@ if ! LC_ALL=C grep -aq 'initWithObjects:count:' "$APP_BUILT/Madeira.debug.dylib"
     exit 1
 fi
 echo "MTLCopyAllDevices 回退: 在 Madeira.debug.dylib 里"
+
+# ---- The staged DXMT archive must come from this working tree --------------
+# The archive is served from an actions/cache entry keyed by build/dxmt-ios/**.
+# That key used to name build.sh and prepare-compat.py alone, so adding
+# airconv_probe.cpp / metal_probe.mm changed nothing: the run restored the older
+# archive, linked it, went green, and shipped an IPA whose probe contained none
+# of the new tracing -- three device rounds produced "about to call the probe"
+# and nothing else, because that code was never in the app.  build.sh embeds the
+# sources' digest in the archive; recomputing it here from the tree is what makes
+# this class of stale restore fail the build instead of shipping.
+DXMT_ARCHIVE="$REPO_ROOT/app/Madeira/libdxmt_combined.a"
+if [ ! -f "$DXMT_ARCHIVE" ]; then
+    echo "missing DXMT archive: $DXMT_ARCHIVE (the DXMT step did not run and the cache did not restore it)" >&2
+    exit 1
+fi
+dxmt_stamp="$(bash "$REPO_ROOT/build/dxmt-ios/source-stamp.sh")"
+if ! LC_ALL=C grep -aq "dxmt-ios-stamp-$dxmt_stamp" "$DXMT_ARCHIVE"; then
+    echo "the DXMT archive was not built from this working tree: dxmt-ios-stamp-$dxmt_stamp is not in it" >&2
+    echo "a cached archive was restored even though the sources changed, or the DXMT step was skipped" >&2
+    exit 1
+fi
+echo "DXMT source stamp: the staged archive matches this working tree"
+
+# ---- The on-device probe must actually be linked into the app --------------
+# One layer further in: the archive can be current while the link drops the
+# probe.  The Swift side reaches it through @_silgen_name, so an archive member
+# that nothing else references is simply not pulled in -- no link error, just a
+# call to address 0 at runtime.  This is the check that would have caught the
+# probe missing from three IPAs in a row.
+if [ -f "$REPO_ROOT/build/dxmt-ios/metal_probe.mm" ]; then
+    probe_definitions="$(awk '{ for (field = 1; field <= NF; field++) if ($field == "_madeira_metal_probe_run" && $0 !~ /\(undefined\)/) print }' "$LOGDIR/startup-symbols.txt")"
+    if [ -z "$probe_definitions" ]; then
+        echo "Madeira.debug.dylib does not define _madeira_metal_probe_run: the probe object was not linked" >&2
+        grep -n '_madeira_metal_probe_run' "$LOGDIR/startup-symbols.txt" >&2 || echo "  (the symbol is not in the symbol table at all)" >&2
+        exit 1
+    fi
+    echo "on-device probe: _madeira_metal_probe_run is defined in Madeira.debug.dylib"
+fi
