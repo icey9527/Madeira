@@ -2758,7 +2758,14 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $browser) {
             AppNavigationView { ExecutableBrowser(folder: LibraryModel.drive) { entry in
-                model.save(entry); browser = false; selected = entry
+                model.save(entry)
+                browser = false
+                // Same trap the Steam download sheet works around above (line ~2370):
+                // presenting the details page in the same runloop as this sheet's
+                // dismissal makes SwiftUI dismiss and re-present it, so the sheet
+                // bounces -- visible as the details box sliding in and snapping back
+                // over and over after an import.  Let the browser finish dismissing.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { selected = entry }
             } }
         }
         .sheet(item: $selected) { entry in
