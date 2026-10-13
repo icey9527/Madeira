@@ -366,16 +366,44 @@ jobs:
             ci-DD/Madeira-DD/Build
             ci-DD/Madeira-DD/ModuleCache.noindex
             ci-DD/Madeira-DD/SDKStatCaches.noindex
-          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-${{ steps.native-fingerprint.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-${{ steps.native-fingerprint.outputs.sha }}-
+          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py') }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.native-fingerprint.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py') }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.native-fingerprint.outputs.sha }}-
 
       - name: Verify committed upstream compatibility layers
         run: python3 tools/ci/verify-upstream-compat.py app/Madeira
 
+      - name: Restore the rebuilt DXMT PE d3d11.dll
+        id: dxmt-pe-cache
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
+        uses: actions/cache/restore@v4
+        with:
+          # Exact key only, no restore-keys: this DLL is shipped inside the IPA, and
+          # a prefix hit could hand back one built from older sources.  A miss just
+          # rebuilds, which is what every run did before this cache existed (the step
+          # costs 2m09s of each build).
+          path: app/Madeira/arm64ec-windows/d3d11.dll
+          key: dxmt-pe-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ steps.dxmtsha.outputs.sha }}-${{ hashFiles('build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py', 'build/llvm-ios/build.sh') }}
+
       - name: DXMT PE（arm64ec d3d11.dll，内嵌库编成 iOS Metal）
         id: dxmt-pe
-        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' && steps.dxmt-pe-cache.outputs.cache-hit != 'true' }}
         run: bash build/dxmt-pe/build.sh > >(tee ci-logs/dxmt-pe.log) 2>&1
+
+      - name: Save the rebuilt DXMT PE d3d11.dll
+        if: ${{ !cancelled() && steps.dxmt-pe-cache.outputs.cache-hit != 'true' && steps.dxmt-pe.outcome == 'success' }}
+        uses: actions/cache/save@v4
+        with:
+          path: app/Madeira/arm64ec-windows/d3d11.dll
+          key: ${{ steps.dxmt-pe-cache.outputs.cache-primary-key }}
+
+      - name: Verify the DXMT PE d3d11.dll (also on a cache hit)
+        # The build script checks its own output, but a cache hit skips the build, so
+        # check the restored file too.  The touch keeps the app stage copying this
+        # DLL into the bundle even when DerivedData came back from the app cache.
+        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
+        run: |
+          python3 build/dxmt-pe/verify-metallib.py app/Madeira/arm64ec-windows/d3d11.dll
+          touch app/Madeira/arm64ec-windows/d3d11.dll
 
       - name: app（xcodebuild 编译冒烟）
         id: app

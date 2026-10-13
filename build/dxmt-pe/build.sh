@@ -74,24 +74,4 @@ echo "d3d11.dll: committed $(wc -c < "$OUT") bytes, freshly built $(wc -c < "$B/
 mv "$OUT.tmp" "$OUT"
 echo "d3d11.dll: shipped $(wc -c < "$OUT") bytes (-std=$METAL_STD --target=$METAL_TARGET)"
 
-python3 - "$OUT" <<'PY'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-found = 0
-i = d.find(b'MTLB')
-while i != -1:
-    if i + 16 <= len(d):
-        platform = struct.unpack_from('<H', d, i + 4)[0]
-        os_ = d[i + 11]
-        major, minor = struct.unpack_from('<HH', d, i + 12)
-        if platform in (0x0001, 0x8001) and os_ in (0x81, 0x82) and 1 <= major <= 40:
-            print('embedded metallib @0x%x: platform=0x%04x OS=0x%02x version=%d.%d'
-                  % (i, platform, os_, major, minor))
-            found += 1
-            if platform != 0x0001 or os_ != 0x82:
-                raise SystemExit('the embedded command library is still not an iOS one')
-    i = d.find(b'MTLB', i + 1)
-if not found:
-    raise SystemExit('no embedded metallib found in the rebuilt d3d11.dll')
-print('embedded command library: iOS container verified')
-PY
+python3 "$R/build/dxmt-pe/verify-metallib.py" "$OUT"
