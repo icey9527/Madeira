@@ -9111,6 +9111,28 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
         ios_total_segv_count = total_segv_count;
         void *pc = (void*)PC_sig(context);
 
+        /* iOS 15 (Madeira port): record the ORIGINAL fault once, before any probe
+         * below can dereference a garbage value taken from this context.  The
+         * probes further down indexed PEB->EcCodeBitMap with an unchecked register
+         * and faulted inside this handler, which re-entered itself and reported
+         * "fault-stuck ... repeated 50 times" instead of the fault it was called
+         * for (see IOS_PROBE_OK).  Register reads, and a dbg_ok-guarded ERR, are the
+         * only things safe here (ml375: a wine macro with no TEB loops forever). */
+        if (total_segv_count == 1)
+        {
+            if (dbg_ok)
+                ERR("[first-fault] pc=%p addr=%p lr=%p sp=%p x0=%p x1=%p x2=%p x8=%p x9=%p x10=%p x11=%p x16=%p x17=%p x18=%p\n",
+                    pc, siginfo->si_addr,
+                    (void*)REGn_sig(30, context), (void*)REGn_sig(31, context),
+                    (void*)REGn_sig(0, context), (void*)REGn_sig(1, context),
+                    (void*)REGn_sig(2, context), (void*)REGn_sig(8, context),
+                    (void*)REGn_sig(9, context), (void*)REGn_sig(10, context),
+                    (void*)REGn_sig(11, context), (void*)REGn_sig(16, context),
+                    (void*)REGn_sig(17, context), (void*)REGn_sig(18, context));
+            else
+                dprintf(2, "[first-fault] pc=%p addr=%p (no TEB)\n", pc, siginfo->si_addr);
+        }
+
         /* Read the NATIVE x18 (iOS platform register value in handler context) */
         uint64_t native_x18;
         __asm__ volatile("mov %0, x18" : "=r"(native_x18));
@@ -10002,6 +10024,14 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
              * find the BLR that set up x11, and dump EC bitmap bit for x11
              * so we can see whether the bitmap fast-path should have taken
              * us out of arm64x_check_call. */
+            /* The arm64ec bitmap spans the whole 64GB guest map (virtual_ios.c
+             * LIMIT = 0x1000000000), and every pointer these probes dereference
+             * comes out of a faulting guest context: a garbage register
+             * (0xffffffffffffffff is common) must never be dereferenced or used to
+             * index the bitmap.  Doing that faulted inside this handler, which
+             * re-entered itself and reported a 50x fault-stuck loop instead of the
+             * fault it was called for.  Worst case this skips a diagnostic. */
+#define IOS_PROBE_OK(p) ((uintptr_t)(p) >= 0x100000000ULL && (uintptr_t)(p) < 0x1000000000ULL)
             if ((uintptr_t)PC_sig(context) < 0x100000000ULL)
             {
                 extern PEB *peb;
@@ -10010,7 +10040,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                 ERR("  x11=%p lr=%p\n", (void*)x11_at_seg, (void*)lr_val);
                 /* Decode the branch instruction at lr-4 to identify which
                  * register held the BR target at the time of the branch. */
-                if (lr_val >= 0x100000004ULL)
+                if (IOS_PROBE_OK(lr_val) && lr_val >= 4)
                 {
                     uint32_t branch_insn = *(uint32_t*)(lr_val - 4);
                     ERR("  branch@(lr-4)=%08x", branch_insn);
@@ -10027,7 +10057,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                     /* Dump 4 insns before the BLR — usually ADRP/ADRPL+LDR
                      * loading x16 from a dispatcher slot. Decode the slot
                      * address and the pointer it currently contains. */
-                    if (lr_val >= 0x100000010ULL)
+                    if (IOS_PROBE_OK(lr_val) && lr_val >= 0x10)
                     {
                         uint32_t i0 = *(uint32_t*)(lr_val - 16);
                         uint32_t i1 = *(uint32_t*)(lr_val - 12);
@@ -10065,7 +10095,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                                 uintptr_t slot_addr = adrp_target + (imm12 * 8);
                                 ERR("    LDR x%d, [x%d, #0x%x] → slot=%p\n",
                                     rt_ldr, rn_ldr, imm12 * 8, (void*)slot_addr);
-                                if (slot_addr >= 0x100000000ULL)
+                                if (IOS_PROBE_OK(slot_addr))
                                 {
                                     void *slot_val = *(void**)slot_addr;
                                     extern uintptr_t ios_jit_reverse_translate_addr(void *addr);
@@ -10082,7 +10112,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                         }
                     }
                 }
-                if (peb && peb->EcCodeBitMap && x11_at_seg >= 0x100000000ULL)
+                if (peb && peb->EcCodeBitMap && IOS_PROBE_OK(x11_at_seg))
                 {
                     uint64_t *bm = (uint64_t *)peb->EcCodeBitMap;
                     size_t page = x11_at_seg >> 12;
@@ -10099,7 +10129,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                  * and at JIT-pool ntdll's __wine_dbg_header offset 0x5ed5c (the
                  * `ldr x11, [x18, #0x60]` instruction) to see whether our x18
                  * patcher replaced it with a B to a trampoline. */
-                if (x11_at_seg >= 0x100000000ULL)
+                if (IOS_PROBE_OK(x11_at_seg))
                 {
                     uint32_t *p = (uint32_t *)x11_at_seg;
                     ERR("  callee prologue: %08x %08x %08x %08x\n",
@@ -10116,7 +10146,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                         int32_t imm26 = (int32_t)(patched & 0x3FFFFFF);
                         if (imm26 & 0x2000000) imm26 |= (int32_t)0xFC000000; /* sign-ext */
                         intptr_t b_target = (intptr_t)(&p[14]) + ((intptr_t)imm26 << 2);
-                        if (b_target >= 0x100000000LL)
+                        if (IOS_PROBE_OK(b_target))
                         {
                             uint32_t *t = (uint32_t *)b_target;
                             ERR("  tramp@%p: %08x %08x %08x %08x %08x %08x %08x\n",
@@ -10155,7 +10185,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                  * arm64ec_process_init. */
                 {
                     uint32_t *cc = peb ? (uint32_t *)peb->WerRegistrationData : NULL;
-                    if ((uintptr_t)cc >= 0x100000000ULL)
+                    if (IOS_PROBE_OK(cc))
                     {
                         ERR("  arm64x_check_call@%p: %08x %08x %08x %08x %08x %08x %08x %08x\n",
                             cc, cc[0], cc[1], cc[2], cc[3], cc[4], cc[5], cc[6], cc[7]);
@@ -10168,7 +10198,7 @@ static void segv_handler( int signal, siginfo_t *siginfo, void *sigcontext )
                             intptr_t b_target = (intptr_t)cc + ((intptr_t)imm26 << 2);
                             ERR("    cc[0] is B → target=%p (delta=%d insns)\n",
                                 (void*)b_target, (int)imm26);
-                            if (b_target >= 0x100000000LL)
+                            if (IOS_PROBE_OK(b_target))
                             {
                                 uint32_t *t = (uint32_t *)b_target;
                                 ERR("    cc-tramp@%p: %08x %08x %08x %08x %08x %08x %08x\n",
