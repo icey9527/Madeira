@@ -55,13 +55,19 @@ make -C "$W" -j"$JOBS" \
 # DXMT's cross file names the toolchain relative to its own source root.
 ln -sfn ../toolchains "$R/dxmt/toolchains"
 if [ ! -f "$B/build.ninja" ]; then
-    (cd "$R/dxmt" && SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" \
+    # -u IPHONEOS_DEPLOYMENT_TARGET: the workflow exports it for the app build,
+    # and with it set Apple's driver compiled meson's build-machine sanity
+    # program for iOS ("using sysroot for MacOSX but targeting iPhone" -> no
+    # _main). This step is a Windows cross build; that variable must not apply.
+    (cd "$R/dxmt" && env -u IPHONEOS_DEPLOYMENT_TARGET \
+        SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" \
         meson setup "$B" --cross-file build-arm64ec-win.txt \
             --native-file "$R/build/dxmt-pe/native-osx.txt" \
             --buildtype release -Dwine_build_path="$W" \
             -Dmetal_std="$METAL_STD" -Dmetal_sdk=iphoneos -Dmetal_target="$METAL_TARGET")
 fi
-SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" ninja -C "$B" src/d3d11/d3d11.dll
+env -u IPHONEOS_DEPLOYMENT_TARGET SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" \
+    ninja -C "$B" src/d3d11/d3d11.dll
 
 echo "d3d11.dll: committed $(wc -c < "$OUT") bytes, freshly built $(wc -c < "$B/src/d3d11/d3d11.dll") bytes"
 "$TC/arm64ec-w64-mingw32-strip" --strip-debug -o "$OUT.tmp" "$B/src/d3d11/d3d11.dll"

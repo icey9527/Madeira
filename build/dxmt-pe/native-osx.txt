@@ -1,12 +1,22 @@
-# Build-machine (macOS) tools for DXMT's cross build. DXMT's own build-osx.txt
-# names 'clang' / 'clang++', which resolve through PATH -- and the DXMT PE build
-# needs llvm-mingw first on PATH for the cross file, so 'clang' became llvm-mingw's
-# clang and the build-machine sanity check produced a binary the runner cannot run:
-#   Sanity check: sanity_check_for_cpp.exe -> -9
-#   Compiler for language cpp for the build machine not found.
-# Absolute paths keep the two roles apart.
+# Build-machine (macOS) tools for DXMT's cross build.
+#
+# Two things made meson's build-machine sanity check fail on the runner:
+#  - DXMT's own build-osx.txt names 'clang' / 'clang++', which resolve through
+#    PATH, and this step needs llvm-mingw first on PATH for the cross file, so
+#    the build machine got llvm-mingw's clang (sanity binary -> -9).
+#  - the workflow exports IPHONEOS_DEPLOYMENT_TARGET=15.6 for the app build, and
+#    with it in the environment Apple's driver compiled the build-machine sanity
+#    program for iOS ("using sysroot for MacOSX but targeting iPhone").
+# Absolute paths plus an explicit -target keep the build machine a macOS one; the
+# build script also unsets IPHONEOS_DEPLOYMENT_TARGET for meson and ninja.
 [binaries]
 c = '/usr/bin/clang'
 cpp = '/usr/bin/clang++'
 ar = '/usr/bin/ar'
 strip = '/usr/bin/strip'
+
+[built-in options]
+c_args = ['-target', 'arm64-apple-macos13.0']
+cpp_args = ['-target', 'arm64-apple-macos13.0']
+c_link_args = ['-target', 'arm64-apple-macos13.0']
+cpp_link_args = ['-target', 'arm64-apple-macos13.0']
