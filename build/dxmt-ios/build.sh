@@ -106,16 +106,16 @@ FAILED_FILES=""
 
 compile_objc() {
     local src=$1 name=$2
-    local relative="${src#"$DXMT_SRC/"}" original_directory="$(dirname "$src")"
+    local relative="${src#"$DXMT_SRC/"}" original_directory="$(dirname "$src")" origin=""
     if [ -f "$BUILD_DIR/compat-src/$relative" ]; then
-        src="$BUILD_DIR/compat-src/$relative"
+        src="$BUILD_DIR/compat-src/$relative"; origin=" [compat]"
     fi
     # MADEIRA_ONLY=<name>: recompile one object only.
     if [ -n "${MADEIRA_ONLY:-}" ] && [ "$name" != "$MADEIRA_ONLY" ]; then return 0; fi
     printf "  %-40s " "$name"
     if xcrun -sdk iphoneos clang $COMMON_FLAGS -x objective-c $INCLUDES -I"$original_directory" \
         -c "$src" -o "$OBJ_DIR/$name.o" 2>"$OBJ_DIR/$name.err"; then
-        echo "OK"; SUCCEEDED=$((SUCCEEDED+1))
+        echo "OK$origin"; SUCCEEDED=$((SUCCEEDED+1))
     else
         echo "FAILED"; FAILED=$((FAILED+1)); FAILED_FILES="$FAILED_FILES $name"
     fi
@@ -391,10 +391,10 @@ echo "Staged: $APP_COPY ($(wc -c < "$APP_COPY" | tr -d ' ') bytes)"
 # lost once already (a second rewrite of the same file re-read the pristine
 # source and overwrote it).  The fallback's -initWithObjects:count: selector is
 # its receipt in the compiled object; without it the archive is not shippable.
-if ! strings "$APP_COPY" | grep -q 'initWithObjects:count:'; then
+if ! LC_ALL=C grep -aq 'initWithObjects:count:' "$APP_COPY"; then
     echo "::error::libdxmt_combined.a has no MTLCopyAllDevices fallback -- either prepare-compat.py's winemetal rewrite is not in the objects, or its guard folded the fallback away (see the comment in prepare-compat.py about the NULL test)"
     echo "  compat winemetal_unix.c MTLCreateSystemDefaultDevice hits: $(grep -c MTLCreateSystemDefaultDevice "$BUILD_DIR/compat-src/winemetal/unix/winemetal_unix.c" 2>/dev/null || true)"
-    echo "  winemetal_unix.o initWithObjects:count: hits: $(strings "$OBJ_DIR/winemetal_unix.o" 2>/dev/null | grep -c 'initWithObjects:count:' || true)"
+    echo "  winemetal_unix.o $(wc -c < "$OBJ_DIR/winemetal_unix.o" 2>/dev/null || echo MISSING) bytes, initWithObjects:count: hits: $(LC_ALL=C grep -ac 'initWithObjects:count:' "$OBJ_DIR/winemetal_unix.o" 2>/dev/null || true)"
     exit 1
 fi
 echo "MTLCopyAllDevices fallback: present in $APP_COPY"
