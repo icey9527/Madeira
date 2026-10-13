@@ -379,7 +379,24 @@ jobs:
           DD="$GITHUB_WORKSPACE/ci-DD/Madeira-DD"
           APP="$DD/Build/Products/Debug-iphoneos/Madeira.app"
           if [ -x "$APP/Madeira" ]; then
-            [ ! -e "$APP/Madeira.debug.dylib" ] || { echo "::error::安装包仍包含拆分的主程序 debug dylib"; exit 1; }
+            # Upstream v0.1.3 structure, read off the shipped IPA: `Madeira` is
+            # a thin launcher that loads `@rpath/Madeira.debug.dylib`, and the
+            # launcher itself carries the app entitlements -- upstream's thin
+            # `Madeira` holds increased-memory-limit + get-task-allow while
+            # `Madeira.debug.dylib` has no entitlements blob at all.  Process
+            # entitlements come from the main executable, so sign the nested
+            # Mach-O first and put the entitlement set on the launcher.
+            for nested in \
+              "$APP/Madeira.debug.dylib" \
+              "$APP/__preview.dylib" \
+              "$APP/d3d12/libmetalirconverter.dylib" \
+              "$APP/Frameworks/StikJIT.framework/StikJIT" \
+              "$APP/PlugIns/MadeiraJITHelper.appex/MadeiraJITHelper" \
+              "$APP/PlugIns/MadeiraJITHelper.appex/MadeiraJITHelper.debug.dylib" \
+              "$APP/PlugIns/MadeiraJITHelper.appex/__preview.dylib"; do
+              [ -e "$nested" ] || continue
+              codesign --force --sign - --timestamp=none "$nested"
+            done
             codesign --force --sign - --timestamp=none --generate-entitlement-der \
               --entitlements app/Madeira/Madeira.entitlements "$APP/Madeira"
             codesign --display --entitlements :- "$APP/Madeira" > ci-logs/nightly-main-entitlements.plist

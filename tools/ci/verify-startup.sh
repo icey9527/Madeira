@@ -5,10 +5,13 @@ APP_BUILT="$1"
 LOGDIR="$2"
 mkdir -p "$LOGDIR"
 find "$APP_BUILT" -type f | LC_ALL=C sort > "$LOGDIR/bundle-files.txt"
-if grep -Eq '/([^/]*\.debug\.dylib|__preview\.dylib)$' "$LOGDIR/bundle-files.txt"; then
-    echo "安装包含遗留 debug/preview dylib" >&2
-    exit 1
-fi
+# Upstream ships the Debug-dylib layout: a thin `Madeira` launcher that loads
+# `Madeira.debug.dylib`, next to `__preview.dylib`, and the JIT helper has the
+# same pair.  This port matches upstream by building with ENABLE_DEBUG_DYLIB=YES,
+# so those files are expected; record them instead of rejecting the bundle.
+grep -E '/([^/]*\.debug\.dylib|__preview\.dylib)$' "$LOGDIR/bundle-files.txt" \
+    > "$LOGDIR/debug-dylibs.txt" || true
+echo "Debug-dylib layout: $(wc -l < "$LOGDIR/debug-dylibs.txt" | tr -d ' ') debug/preview dylib(s)"
 shopt -s nullglob
 BINARIES=("$APP_BUILT/Madeira" "$APP_BUILT/"*.dylib)
 : > "$LOGDIR/startup-dependencies.txt"
@@ -19,10 +22,25 @@ for binary in "${BINARIES[@]}"; do
     otool -l "$binary" >> "$LOGDIR/startup-load-commands.txt"
     nm -m -u "$binary" >> "$LOGDIR/startup-imports.txt"
 done
-if grep -Eq 'Madeira\.debug\.dylib|__preview\.dylib' "$LOGDIR/startup-dependencies.txt"; then
-    echo "主启动链仍引用 debug/preview dylib" >&2
+# Read off the shipped upstream v0.1.3 IPA: `Madeira` is a 73,536-byte launcher
+# whose only Madeira dependency is `@rpath/Madeira.debug.dylib`, and the code
+# lives in `Madeira.debug.dylib` (61,822,448 bytes).  Check the launcher's own
+# dependency list -- the aggregate above also carries each dylib's install name,
+# so it would match even when the launcher loads nothing.
+[ -f "$APP_BUILT/Madeira.debug.dylib" ] || {
+    echo "缺少 Madeira.debug.dylib（上游布局要求拆分主程序）" >&2
+    exit 1
+}
+main_dependencies="$(otool -L "$APP_BUILT/Madeira")"
+if ! printf '%s\n' "$main_dependencies" | grep -q 'Madeira\.debug\.dylib'; then
+    echo "主启动链未引用 Madeira.debug.dylib（上游布局要求引用）" >&2
     exit 1
 fi
+if printf '%s\n' "$main_dependencies" | grep -q '__preview\.dylib'; then
+    echo "__preview.dylib 不得成为启动依赖" >&2
+    exit 1
+fi
+echo "主启动链引用 Madeira.debug.dylib（上游布局）"
 main_load_commands="$(otool -l "$APP_BUILT/Madeira")"
 main_minimum="$(printf '%s\n' "$main_load_commands" | awk '/^[[:space:]]*cmd LC_/ { command = $2 } command == "LC_BUILD_VERSION" && $1 == "minos" { print $2 } command == "LC_VERSION_MIN_IPHONEOS" && $1 == "version" { print $2 }')"
 if [ "$main_minimum" != "${IPHONEOS_DEPLOYMENT_TARGET:-15.6}" ]; then
@@ -42,7 +60,10 @@ if grep -q 'NSt3__13pmr' "$LOGDIR/startup-imports.txt"; then
     grep 'NSt3__13pmr' "$LOGDIR/startup-imports.txt" >&2
     exit 1
 fi
-nm -m "$APP_BUILT/Madeira" > "$LOGDIR/startup-symbols.txt"
+: > "$LOGDIR/startup-symbols.txt"
+for binary in "${BINARIES[@]}"; do
+    nm -m "$binary" >> "$LOGDIR/startup-symbols.txt"
+done
 for symbol in __ZNSt3__13pmr15memory_resourceD2Ev __ZTINSt3__13pmr15memory_resourceE; do
     definitions="$(awk -v symbol="$symbol" '{ for (field = 1; field <= NF; field++) if ($field == symbol && $0 !~ /\(undefined\)/) print }' "$LOGDIR/startup-symbols.txt")"
     if [ -z "$definitions" ]; then
