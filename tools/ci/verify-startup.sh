@@ -137,3 +137,17 @@ if [ -n "$unaudited" ]; then
     exit 1
 fi
 echo "弱导入 C 符号: $(printf '%s\n' "$weak_c_symbols" | grep -c . || true) 个，全部已审计"
+
+# ---- The MTLCopyAllDevices fallback must be in the shipped dylib ------------
+# The weak import is audited above, but auditing the import says nothing about
+# whether the guarded call site survived the build.  It did not once: a second
+# prepare-compat.py rewrite of winemetal_unix.c overwrote the guard, and every
+# IPA from that commit crashed in D3D11 device creation with pc=0 (found by
+# disassembling the installed dylib, not in CI).  -initWithObjects:count: is
+# the selector only that fallback compiles to, so a build that lost the guard
+# fails here instead of shipping a jump to address 0.
+if ! LC_ALL=C grep -aq 'initWithObjects:count:' "$APP_BUILT/Madeira.debug.dylib"; then
+    echo "Madeira.debug.dylib 缺少 MTLCopyAllDevices 回退（prepare-compat.py 的 winemetal 改写没进二进制，或 app 缓存发了一份旧 dylib）" >&2
+    exit 1
+fi
+echo "MTLCopyAllDevices 回退: 在 Madeira.debug.dylib 里"

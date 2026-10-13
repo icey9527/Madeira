@@ -385,3 +385,14 @@ xcrun -sdk iphoneos libtool -static -o "$COMBINED" "$OUT_LIB" "$LLVM_BUILD/lib/"
 APP_COPY="$REPO_ROOT/app/Madeira/libdxmt_combined.a"
 cp "$COMBINED" "$APP_COPY"
 echo "Staged: $APP_COPY ($(wc -c < "$APP_COPY" | tr -d ' ') bytes)"
+
+# The MTLCopyAllDevices guard prepare-compat.py writes into winemetal_unix.c is
+# what keeps D3D11 device creation off address 0 on iOS 15.6, and it has been
+# lost once already (a second rewrite of the same file re-read the pristine
+# source and overwrote it).  The fallback's -initWithObjects:count: selector is
+# its receipt in the compiled object; without it the archive is not shippable.
+if ! strings "$APP_COPY" | grep -q 'initWithObjects:count:'; then
+    echo "::error::libdxmt_combined.a has no MTLCopyAllDevices fallback -- prepare-compat.py's winemetal rewrite is not in the objects"
+    exit 1
+fi
+echo "MTLCopyAllDevices fallback: present in $APP_COPY"

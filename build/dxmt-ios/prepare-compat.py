@@ -48,17 +48,26 @@ print(f'iOS {sys.argv[3]} optional Metal cache symbols: {relative}')
 
 
 # iOS 15 (Madeira port): MTLCopyAllDevices exists on iOS only from 18.0 and is
-# weak-imported, so below that it binds to NULL and the call jumps to address 0
-# (measured on the device: D3D11 device enumeration crashed inside this function
-# with pc=0). Below iOS 18 there is one device; return it as a +1 array so the
-# Copy rule the callers release by holds.
+# weak-imported, so below that it binds to NULL and an unconditional call jumps
+# to address 0 (measured on the device: D3D11 device enumeration crashed inside
+# this function with pc=0).  Test the imported address itself, the way cache.c
+# above does; below iOS 18 there is one device, returned as a +1 array so the
+# Copy rule the callers release by still holds.
+#
+# Both edits to this one file share a buffer and it is written once, and the
+# written file is read back and checked.  That is not belt-and-braces: the
+# second rewrite below used to re-read the pristine source and write the file
+# again, which silently dropped this guard -- and with it the whole fix -- from
+# every build from the commit that added the gpuResourceID experiment until the
+# bug was found by disassembling a shipped dylib on the device.
 relative = 'winemetal/unix/winemetal_unix.c'
 source = (source_root / relative).read_text(encoding='utf-8')
+
 original = '  params->ret = (obj_handle_t)MTLCopyAllDevices();\n'
 replacement = (
     '  /* iOS < 18: MTLCopyAllDevices is weak-imported and NULL; use the one\n'
     '   * device there is, as a +1 array (the Copy rule the callers release). */\n'
-    '  if (@available(macOS 10.11, iOS 18.0, *)) {\n'
+    '  if (MTLCopyAllDevices) {\n'
     '    params->ret = (obj_handle_t)MTLCopyAllDevices();\n'
     '  } else {\n'
     '    id<MTLDevice> device = MTLCreateSystemDefaultDevice();\n'
@@ -69,11 +78,12 @@ replacement = (
 )
 if source.count(original) != 1:
     raise SystemExit(f'DXMT MTLCopyAllDevices pattern changed: {original!r}')
-output = output_root / relative
-output.parent.mkdir(parents=True, exist_ok=True)
-output.write_text(source.replace(original, replacement), encoding='utf-8')
+source = source.replace(original, replacement)
+# Receipts: both must be in the file this script leaves behind.  The first one
+# is also what tools/ci/verify-startup.sh greps the built dylib for, and the
+# second is the name of the helper the block below injects.
+mtlcad_marker = 'if (MTLCopyAllDevices) {'
 print(f'iOS {sys.argv[3]} optional MTLCopyAllDevices: {relative}')
-
 
 # iOS 15 (Madeira port) EXPERIMENT: MTLResource.gpuResourceID is a Metal 3
 # (iOS 16) API -- calling it on 15.6 raises NSInvalidArgumentException
@@ -83,8 +93,6 @@ print(f'iOS {sys.argv[3]} optional MTLCopyAllDevices: {relative}')
 # when argument buffers are unavailable (see the support_argument_buffers
 # ternary). What this build measures is whether the shaders airconv generates
 # actually need a real id -- device creation and the MSAA query decide that.
-relative = 'winemetal/unix/winemetal_unix.c'
-source = (source_root / relative).read_text(encoding='utf-8')
 helper_anchor = '#import <Metal/Metal.h>\n'
 if source.count(helper_anchor) != 1:
     raise SystemExit('DXMT winemetal_unix.c: Metal import anchor changed')
@@ -110,7 +118,15 @@ for original, replacement in replacements:
 for pattern in ('[sampler gpuResourceID]', '[ret gpuResourceID]', '[t gpuResourceID]'):
     if pattern in source:
         raise SystemExit(f'DXMT winemetal_unix.c still calls {pattern}')
+gpu_marker = 'madeira_gpu_resource_id'
+
 output = output_root / relative
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(source, encoding='utf-8')
-print(f'iOS 15.6 gpuResourceID guarded in {relative} ({total} sites)')
+
+# The file the build compiles is the only thing that matters, so check it.
+written = output.read_text(encoding='utf-8')
+for marker in (mtlcad_marker, gpu_marker):
+    if marker not in written:
+        raise SystemExit(f'{relative}: {marker!r} missing from the written file')
+print(f'iOS {sys.argv[3]} gpuResourceID guarded in {relative} ({total} sites)')

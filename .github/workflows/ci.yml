@@ -345,6 +345,19 @@ jobs:
           path: app/Madeira/libdxmt_combined.a
           key: ${{ steps.dxmt-cache.outputs.cache-primary-key }}
 
+      # The app cache hands back a linked Madeira.debug.dylib, and restoring it
+      # when the archives it was linked from have changed is how a fixed build
+      # ships an old binary (that happened: the guard for MTLCopyAllDevices was
+      # missing from an IPA that should have carried it).  Content-hash the
+      # archives the link consumes and make them part of the key, so any change
+      # there invalidates the prefix restore.
+      - name: Fingerprint the staged native libraries
+        id: native-fingerprint
+        run: |
+          sha="$(LC_ALL=C sha256sum app/Madeira/*.a | LC_ALL=C sha256sum | cut -d' ' -f1)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "staged native libraries fingerprint: $sha"
+
       - name: Restore App incremental build
         id: app-cache
         uses: actions/cache/restore@v4
@@ -353,8 +366,8 @@ jobs:
             ci-DD/Madeira-DD/Build
             ci-DD/Madeira-DD/ModuleCache.noindex
             ci-DD/Madeira-DD/SDKStatCaches.noindex
-          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-
+          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-${{ steps.native-fingerprint.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-${{ steps.native-fingerprint.outputs.sha }}-
 
       - name: Verify committed upstream compatibility layers
         run: python3 tools/ci/verify-upstream-compat.py app/Madeira
