@@ -1,0 +1,12 @@
+# Build-machine (macOS) tools for DXMT's cross build. DXMT's own build-osx.txt
+# names 'clang' / 'clang++', which resolve through PATH -- and the DXMT PE build
+# needs llvm-mingw first on PATH for the cross file, so 'clang' became llvm-mingw's
+# clang and the build-machine sanity check produced a binary the runner cannot run:
+#   Sanity check: sanity_check_for_cpp.exe -> -9
+#   Compiler for language cpp for the build machine not found.
+# Absolute paths keep the two roles apart.
+[binaries]
+c = '/usr/bin/clang'
+cpp = '/usr/bin/clang++'
+ar = '/usr/bin/ar'
+strip = '/usr/bin/strip'

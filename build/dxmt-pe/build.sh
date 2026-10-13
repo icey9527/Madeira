@@ -56,7 +56,8 @@ make -C "$W" -j"$JOBS" \
 ln -sfn ../toolchains "$R/dxmt/toolchains"
 if [ ! -f "$B/build.ninja" ]; then
     (cd "$R/dxmt" && SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" \
-        meson setup "$B" --cross-file build-arm64ec-win.txt --native-file build-osx.txt \
+        meson setup "$B" --cross-file build-arm64ec-win.txt \
+            --native-file "$R/build/dxmt-pe/native-osx.txt" \
             --buildtype release -Dwine_build_path="$W" \
             -Dmetal_std="$METAL_STD" -Dmetal_sdk=iphoneos -Dmetal_target="$METAL_TARGET")
 fi
