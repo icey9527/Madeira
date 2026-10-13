@@ -27,9 +27,25 @@ if [ ! -s "$REPO_ROOT/FEX/External/fmt/include/fmt/format.h" ]; then
     exit 1
 fi
 
+# iOS 15 (Madeira port): the internal command library is loaded by the Metal
+# device on the device itself, so its container has to name iOS and its Metal
+# language version has to be one that OS accepts.  Built for macOS 14.0 /
+# Metal 3.1 (the upstream pin, which iOS 17+ accepts) iOS 15.6 refuses it:
+#   Failed to create internal command library: ... "This library format is not
+#   supported on this platform (or was built with an old version of the tools)"
+# MSL 2.4 is the iOS 15 language version and the shaders here use nothing past
+# kernel/texture/threadgroup features, so 2.4 compiles them; a container built
+# with -sdk iphoneos names iOS instead of macOS.  These three knobs override
+# both (DXMT's meson build keeps its own macOS pin for the PE-side DLL).
+DXMT_METAL_SDK="${DXMT_METAL_SDK:-iphoneos}"
+DXMT_METAL_OS="${IPHONEOS_DEPLOYMENT_TARGET:-15.6}"
+DXMT_METAL_OS="${DXMT_METAL_OS%%.*}"
+DXMT_METAL_TARGET="${DXMT_METAL_TARGET:-air64-apple-ios${DXMT_METAL_OS}.0}"
+DXMT_METAL_STD="${DXMT_METAL_STD:-metal2.4}"
+
 mkdir -p "$BUILD_DIR/shader-headers"
 for shader in air_msad air_samplepos air_tessellation; do
-    xcrun -sdk macosx metal -std=metal3.1 --target=air64-apple-macos14.0 \
+    xcrun -sdk "$DXMT_METAL_SDK" metal -std="$DXMT_METAL_STD" --target="$DXMT_METAL_TARGET" \
         -c "$DXMT_SRC/airconv/shaders/$shader.metal" \
         -o "$BUILD_DIR/shader-headers/$shader.air"
     xxd -n "$shader" -i "$BUILD_DIR/shader-headers/$shader.air" "$BUILD_DIR/shader-headers/$shader.h"
@@ -259,15 +275,15 @@ echo "=== MADEIRA: dxmt_madeira_native -- internal command library ==="
 # DXMT's meson build (the container format must also be one the OS reads). The
 # script's own timestamp is part of
 # the cache check so that a flag change here regenerates the header.
-DXMT_METAL_STD="${DXMT_METAL_STD:-metal3.1}"
+# DXMT_METAL_STD / _SDK / _TARGET are set with the shader loop above.
 if [ ! -f "$BUILD_DIR/shader-headers/dxmt_command.h" ] \
    || [ "$DXMT_SRC/dxmt/dxmt_command.metal" -nt "$BUILD_DIR/shader-headers/dxmt_command.h" ] \
    || [ "$0" -nt "$BUILD_DIR/shader-headers/dxmt_command.h" ]; then
     mkdir -p "$BUILD_DIR/shader-headers"
     (cd "$BUILD_DIR/shader-headers" \
-     && xcrun -sdk macosx metal -std="$DXMT_METAL_STD" --target=air64-apple-macos14.0 \
+     && xcrun -sdk "$DXMT_METAL_SDK" metal -std="$DXMT_METAL_STD" --target="$DXMT_METAL_TARGET" \
           -o dxmt_command.air -c "$DXMT_SRC/dxmt/dxmt_command.metal" \
-     && xcrun -sdk macosx metallib -o dxmt_command.metallib dxmt_command.air \
+     && xcrun -sdk "$DXMT_METAL_SDK" metallib -o dxmt_command.metallib dxmt_command.air \
      && xxd -n dxmt_command -i dxmt_command.metallib dxmt_command.h)
     echo "  dxmt_command.h                           OK (-std=$DXMT_METAL_STD)"
 else
