@@ -73,3 +73,44 @@ output = output_root / relative
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(source.replace(original, replacement), encoding='utf-8')
 print(f'iOS {sys.argv[3]} optional MTLCopyAllDevices: {relative}')
+
+
+# iOS 15 (Madeira port) EXPERIMENT: MTLResource.gpuResourceID is a Metal 3
+# (iOS 16) API -- calling it on 15.6 raises NSInvalidArgumentException
+# ("-[AGXG13GFamilySampler gpuResourceID]: unrecognized selector") and the
+# process dies. DXMT encodes these ids into its argument buffers; below iOS 16
+# there is no id to encode, so hand the encoder 0, the value DXMT itself uses
+# when argument buffers are unavailable (see the support_argument_buffers
+# ternary). What this build measures is whether the shaders airconv generates
+# actually need a real id -- device creation and the MSAA query decide that.
+relative = 'winemetal/unix/winemetal_unix.c'
+source = (source_root / relative).read_text(encoding='utf-8')
+helper_anchor = '#import <Metal/Metal.h>\n'
+if source.count(helper_anchor) != 1:
+    raise SystemExit('DXMT winemetal_unix.c: Metal import anchor changed')
+helper = helper_anchor + ('/* iOS 15: gpuResourceID is Metal 3 (iOS 16); encode 0 when there is none. */\nstatic inline uint64_t madeira_gpu_resource_id(id resource) {\n  if (@available(iOS 16.0, macOS 13.0, *))\n    return resource ? (uint64_t)[resource gpuResourceID]._impl : 0;\n  return 0;\n}\n')
+source = source.replace(helper_anchor, helper)
+replacements = (
+    ('info->gpu_resource_id = info->support_argument_buffers ? [sampler gpuResourceID]._impl : 0;',
+     'info->gpu_resource_id = info->support_argument_buffers ? madeira_gpu_resource_id(sampler) : 0;'),
+    ('info->gpu_resource_id = [ret gpuResourceID]._impl;',
+     'info->gpu_resource_id = madeira_gpu_resource_id(ret);'),
+    ('params->gpu_resource_id = [ret gpuResourceID]._impl;',
+     'params->gpu_resource_id = madeira_gpu_resource_id(ret);'),
+    ('info->gpu_resource_id = t ? [t gpuResourceID]._impl : 0;',
+     'info->gpu_resource_id = t ? madeira_gpu_resource_id(t) : 0;'),
+)
+total = 0
+for original, replacement in replacements:
+    count = source.count(original)
+    if count == 0:
+        raise SystemExit(f'DXMT gpuResourceID pattern missing: {original!r}')
+    total += count
+    source = source.replace(original, replacement)
+for pattern in ('[sampler gpuResourceID]', '[ret gpuResourceID]', '[t gpuResourceID]'):
+    if pattern in source:
+        raise SystemExit(f'DXMT winemetal_unix.c still calls {pattern}')
+output = output_root / relative
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(source, encoding='utf-8')
+print(f'iOS 15.6 gpuResourceID guarded in {relative} ({total} sites)')
