@@ -185,6 +185,50 @@ airconv_files = (
          'enum class OS : uint8_t {\n  MTLBOS_macOS = 0x81,\n  MTLBOS_iOS = 0x82,\n};'),
     ), ('MTLBOS_iOS',)),
     ('airconv/metallib_writer.cpp', (
+        # iOS 15 (Madeira port): DXMT already dumps the compiled module on the
+        # DXSO path (dxso_compile.cpp, DXMT_AIRCONV_DUMP).  The D3D11 path -- the
+        # one that dies inside Apple's compiler as soon as a shader reads a
+        # texture -- had no such hook, so this one sits in MetallibWriter::Write,
+        # the single point every stage's module passes through, and drops the
+        # LLVM IR text next to an index line.  The IR is what the rejected shader
+        # has to be diffed with, and it is written before the Metal call that
+        # wedges, so the dump survives a hung run.  Off unless the variable is
+        # set (the app sets it from an env.DXMT_AIRCONV_DUMP line in madeira.cfg).
+        ('#include "metallib_writer.hpp"\n',
+         '#include "metallib_writer.hpp"\n#include <atomic>\n#include <cstdio>\n'
+         '#include <cstdlib>\n#include <string>\n#include <unistd.h>\n'),
+        ('void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {\n',
+         '/* see prepare-compat.py: env-gated dump of the module AGX is about to get */\n'
+         'static void MadeiraDumpAirconvModule(const llvm::Module &module) {\n'
+         '  const char *dir = std::getenv("DXMT_AIRCONV_DUMP");\n'
+         '  if (!dir || !dir[0])\n'
+         '    return;\n'
+         '  static std::atomic<uint64_t> counter{0};\n'
+         '  uint64_t n = counter.fetch_add(1, std::memory_order_relaxed);\n'
+         '  char stem[64];\n'
+         '  std::snprintf(stem, sizeof(stem), "airconv_%d_%llu", (int)getpid(),\n'
+         '                (unsigned long long)n);\n'
+         '  std::string base = std::string(dir) + "/" + stem;\n'
+         '  std::string text;\n'
+         '  raw_string_ostream stream(text);\n'
+         '  module.print(stream, nullptr);\n'
+         '  stream.flush();\n'
+         '  if (FILE *fp = std::fopen((base + ".ll").c_str(), "wb")) {\n'
+         '    std::fwrite(text.data(), 1, text.size(), fp);\n'
+         '    std::fclose(fp);\n'
+         '  }\n'
+         '  std::string index;\n'
+         '  for (const llvm::Function &function : module)\n'
+         '    index += function.getName().str() + "\\n";\n'
+         '  if (FILE *fp = std::fopen((std::string(dir) + "/index.txt").c_str(), "ab")) {\n'
+         '    std::string line = std::string(stem) + " " + std::to_string(text.size()) + " bytes\\n" + index;\n'
+         '    std::fwrite(line.data(), 1, line.size(), fp);\n'
+         '    std::fclose(fp);\n'
+         '  }\n'
+         '}\n'
+         '\n'
+         'void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {\n'
+         '  MadeiraDumpAirconvModule(module);\n'),
         ('  header.Platform = Platform::MTLBPlatform_macOS;',
          '  header.Platform = Platform::MTLBPlatform_iOS;'),
         ('  header.VersionMajor = 2;\n  header.VersionMinor = 7;',
@@ -197,7 +241,7 @@ airconv_files = (
         ('          .airVersionMajor = 2,\n          .airVersionMinor = 6,\n          .languageVersionMajor = 3,\n          .languageVersionMinor = 1,',
          '          .airVersionMajor = 2,\n          .airVersionMinor = 4,\n          .languageVersionMajor = 2,\n          .languageVersionMinor = 4,',
          None),
-    ), ('MTLBPlatform_iOS', 'header.Platform = Platform::MTLBPlatform_iOS;',
+    ), ('MTLBPlatform_iOS', 'header.Platform = Platform::MTLBPlatform_iOS;', 'MadeiraDumpAirconvModule', 'DXMT_AIRCONV_DUMP',
         'header.VersionMajor = 2;', 'header.VersionMinor = 6;',
         'header.OS = OS::MTLBOS_iOS;', 'header.OSVersionMajor = 15;',
         'header.OSVersionMinor = 0;')),
