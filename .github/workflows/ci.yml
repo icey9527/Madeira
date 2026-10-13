@@ -351,7 +351,7 @@ jobs:
       # missing from an IPA that should have carried it).  Content-hash the
       # archives the link consumes and make them part of the key, so any change
       # there invalidates the prefix restore.
-      - name: Fingerprint the staged native libraries
+      - name: Fingerprint the staged native libraries (recorded, no longer in the key)
         id: native-fingerprint
         run: |
           sha="$(LC_ALL=C sha256sum app/Madeira/*.a | LC_ALL=C sha256sum | cut -d' ' -f1)"
@@ -363,11 +363,15 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            ci-DD/Madeira-DD/Build
+            # Intermediates only: caching Build/Products would cache the linked
+            # dylib and the copied bundles, which is exactly how a fixed binary
+            # failed to ship once.  The compile products still come back, so the
+            # link and the copy phases just run again -- that is the point.
+            ci-DD/Madeira-DD/Build/Intermediates.noindex
             ci-DD/Madeira-DD/ModuleCache.noindex
             ci-DD/Madeira-DD/SDKStatCaches.noindex
-          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py') }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.native-fingerprint.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py') }}-${{ steps.dxmtsha.outputs.sha }}-${{ steps.native-fingerprint.outputs.sha }}-
+          key: app-v2-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py') }}-${{ steps.dxmtsha.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: app-v2-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/dxmt-pe/native-osx.txt', 'build/dxmt-pe/verify-metallib.py') }}-${{ steps.dxmtsha.outputs.sha }}-
 
       - name: Verify committed upstream compatibility layers
         run: python3 tools/ci/verify-upstream-compat.py app/Madeira
@@ -414,7 +418,11 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            ci-DD/Madeira-DD/Build
+            # Intermediates only: caching Build/Products would cache the linked
+            # dylib and the copied bundles, which is exactly how a fixed binary
+            # failed to ship once.  The compile products still come back, so the
+            # link and the copy phases just run again -- that is the point.
+            ci-DD/Madeira-DD/Build/Intermediates.noindex
             ci-DD/Madeira-DD/ModuleCache.noindex
             ci-DD/Madeira-DD/SDKStatCaches.noindex
           key: ${{ steps.app-cache.outputs.cache-primary-key }}
