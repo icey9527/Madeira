@@ -353,8 +353,8 @@ jobs:
             ci-DD/Madeira-DD/Build
             ci-DD/Madeira-DD/ModuleCache.noindex
             ci-DD/Madeira-DD/SDKStatCaches.noindex
-          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/wine-pe/build-ntdll-logged.sh', 'build/wine-pe/log-hybrid.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py', 'build/wine-pe/build-ntdll-logged.sh', 'build/wine-pe/log-hybrid.py') }}-
+          key: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: app-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ env.APP_ONLY }}-${{ hashFiles('app/Madeira.xcodeproj/project.pbxproj', 'app/Madeira.xcodeproj/xcshareddata/xcschemes/**', 'app/Madeira/Info.plist', 'app/Madeira/Madeira.entitlements', 'tools/ci/build-all.sh', 'build/dxmt-pe/build.sh', 'build/dxmt-pe/prepare-meson.py') }}-
 
       - name: Verify committed upstream compatibility layers
         run: python3 tools/ci/verify-upstream-compat.py app/Madeira
@@ -363,11 +363,6 @@ jobs:
         id: dxmt-pe
         if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
         run: bash build/dxmt-pe/build.sh > >(tee ci-logs/dxmt-pe.log) 2>&1
-
-      - name: ARM64EC ntdll with hybrid-slot logging（诊断用）
-        id: ntdll-logged
-        if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.native.outcome == 'success' && steps.llvm.outcome == 'success' }}
-        run: bash build/wine-pe/build-ntdll-logged.sh > >(tee ci-logs/ntdll-logged.log) 2>&1
 
       - name: app（xcodebuild 编译冒烟）
         id: app
