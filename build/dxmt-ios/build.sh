@@ -37,11 +37,18 @@ fi
 # kernel/texture/threadgroup features, so 2.4 compiles them; a container built
 # with -sdk iphoneos names iOS instead of macOS.  These three knobs override
 # both (DXMT's meson build keeps its own macOS pin for the PE-side DLL).
+# -sdk iphoneos also needs the SDK-qualified standard name below Metal 3.0:
+#   error: invalid value 'metal2.4' in '-std=metal2.4'
+#   note: use 'ios-metal2.4' for 'Metal 2.4 (iOS)' standard
+# "Metal 2.4 (iOS)" is the iOS 15 language version; metal3.0 and up use the
+# unified (unqualified) name, so the SDK and the standard name move together.
+# The AIR target keeps the shape the iOS 16 fork's CI builds and its device
+# accept: air64-apple-ios<major> without a minor version.
 DXMT_METAL_SDK="${DXMT_METAL_SDK:-iphoneos}"
 DXMT_METAL_OS="${IPHONEOS_DEPLOYMENT_TARGET:-15.6}"
 DXMT_METAL_OS="${DXMT_METAL_OS%%.*}"
-DXMT_METAL_TARGET="${DXMT_METAL_TARGET:-air64-apple-ios${DXMT_METAL_OS}.0}"
-DXMT_METAL_STD="${DXMT_METAL_STD:-metal2.4}"
+DXMT_METAL_TARGET="${DXMT_METAL_TARGET:-air64-apple-ios${DXMT_METAL_OS}}"
+DXMT_METAL_STD="${DXMT_METAL_STD:-ios-metal2.4}"
 
 mkdir -p "$BUILD_DIR/shader-headers"
 for shader in air_msad air_samplepos air_tessellation; do
