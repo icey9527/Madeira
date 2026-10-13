@@ -255,8 +255,9 @@ echo "=== airconv probe (ObjC++; the on-device reproduction, see build/airconv-p
 # spellings of newLibraryWithData / newRenderPipelineStateWithDescriptor are the
 # ones this project already uses through its d3d12 shim, which keeps the Swift
 # side down to one C call and needs no new Xcode files.
-compile_cxx "$BUILD_DIR/airconv_probe.mm" airconv_probe \
-    "-x objective-c++ -I$DXMT_SRC/airconv -I$DXMT_SRC/airconv/nt -I$DXMT_SRC -I$REPO_ROOT/FEX/External/fmt/include -DFMT_HEADER_ONLY=1"
+compile_cxx "$BUILD_DIR/airconv_probe.cpp" airconv_probe \
+    "-I$DXMT_SRC/airconv -I$DXMT_SRC/airconv/nt -I$DXMT_SRC -I$REPO_ROOT/FEX/External/fmt/include -DFMT_HEADER_ONLY=1"
+compile_cxx "$BUILD_DIR/metal_probe.mm" metal_probe "-x objective-c++"
 
 echo "=== DXBCParser (uses exceptions — override) ==="
 for cpp in BlobContainer.cpp DXBCUtils.cpp ShaderBinary.cpp; do
