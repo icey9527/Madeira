@@ -116,7 +116,11 @@ fi
 # satisfy the link task with a product older than the archives it links -- which
 # is how a fixed binary fails to ship.  Neither check depends on a cache key.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-for dir in arm64ec-windows aarch64-windows i386-windows x86_64-vcruntime d3d12; do
+# d3d12 is deliberately not in this list: the build re-signs the bundled Mach-O
+# dylib there (the 'Sign bundled dylibs' phase), so its bytes legitimately differ
+# from the tree copy; its tree copy is manifest-verified and its bundle copy is
+# produced by the copy+sign phases themselves.
+for dir in arm64ec-windows aarch64-windows i386-windows x86_64-vcruntime; do
     if [ ! -d "$APP_BUILT/$dir" ]; then
         echo "bundle 里缺少目录: $dir" >&2
         exit 1
@@ -128,7 +132,7 @@ for dir in arm64ec-windows aarch64-windows i386-windows x86_64-vcruntime d3d12; 
         exit 1
     fi
 done
-echo "bundle 与工作树逐字节一致: 5 个拷贝目录"
+echo "bundle 与工作树逐字节一致: 4 个 PE 拷贝目录"
 
 newest_a=""
 for a in "$REPO_ROOT/app/Madeira"/*.a; do
