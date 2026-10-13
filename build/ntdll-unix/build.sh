@@ -169,6 +169,12 @@ else
     FAILED_FILES="$FAILED_FILES wg_parser_apple_ios"
 fi
 
+# The two os_sync availability checks in wine's futex path must name iOS, or
+# 15.6 takes a branch whose weak-imported symbol is NULL (see prepare-sync.py).
+# The rewrite produces a build-time copy so the wine submodule stays clean.
+python3 "$BUILD_DIR/prepare-sync.py" "$WINE_SRC" "$OBJ_DIR/sync.c"
+echo ""
+
 for src in $WINE_SRC/dlls/ntdll/unix/*.c; do
     name=$(basename "$src" .c)
 
@@ -197,6 +203,10 @@ for src in $WINE_SRC/dlls/ntdll/unix/*.c; do
             ;;
         thread)
             compile_one "$BUILD_DIR/thread_ios.c" "thread"
+            ;;
+        sync)
+            # prepare-sync.py rewrote the two os_sync availability checks
+            compile_one "$OBJ_DIR/sync.c" "sync"
             ;;
         *)
             compile_one "$src" "$name"

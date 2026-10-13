@@ -1,0 +1,19 @@
+# Weak-imported C symbols in the startup binaries (Madeira + Madeira.debug.dylib).
+# tools/ci/verify-startup.sh fails the build when a weak C import is not listed here:
+# on an iOS that does not export the symbol the import binds to NULL, and a call that
+# is not behind an availability check or a NULL test jumps to address 0.
+#
+# Add a line with the symbol and why its call sites are safe.
+#
+# symbol                               why it is safe
+_MTLCopyAllDevices                     iOS 18; guarded by @available(macOS 10.11, iOS 18.0, *) with an MTLCreateSystemDefaultDevice fallback (build/dxmt-ios/prepare-compat.py)
+_MTLGetShaderCachePath                 private Metal; declared weak_import and NULL-tested (build/dxmt-ios/prepare-compat.py rewrites winemetal/unix/cache.c)
+_MTLSetShaderCachePath                 private Metal; declared weak_import and NULL-tested (same rewrite)
+__availability_version_check           libSystem's own availability helper; always exported
+__dyld_get_dlopen_image_header         dyld private; weak in upstream's thin debug-dylib launcher, read to find the launcher's own image (not called through a NULL pointer; the app launches)
+_os_release                            libSystem (os/object.h, iOS 8+); always exported
+_os_sync_wait_on_address               iOS 17.4; guarded by __builtin_available(macOS 14.4, iOS 17.4, *) (build/ntdll-unix/prepare-sync.py rewrites wine's dlls/ntdll/unix/sync.c)
+_os_sync_wait_on_address_with_timeout  same guard, same file
+_os_sync_wake_by_address_all           same guard; wine's include/wine/madeira_fastsync.h already names iOS 17.4
+_os_sync_wake_by_address_any           same guard
+_voucher_adopt                         mach vouchers; no call site in the trees we build (imported by FEX/LLVM objects), so nothing can call through NULL

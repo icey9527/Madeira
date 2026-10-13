@@ -45,3 +45,31 @@ output = output_root / relative
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(source, encoding='utf-8')
 print(f'iOS {sys.argv[3]} optional Metal cache symbols: {relative}')
+
+
+# iOS 15 (Madeira port): MTLCopyAllDevices exists on iOS only from 18.0 and is
+# weak-imported, so below that it binds to NULL and the call jumps to address 0
+# (measured on the device: D3D11 device enumeration crashed inside this function
+# with pc=0). Below iOS 18 there is one device; return it as a +1 array so the
+# Copy rule the callers release by holds.
+relative = 'winemetal/unix/winemetal_unix.c'
+source = (source_root / relative).read_text(encoding='utf-8')
+original = '  params->ret = (obj_handle_t)MTLCopyAllDevices();\n'
+replacement = (
+    '  /* iOS < 18: MTLCopyAllDevices is weak-imported and NULL; use the one\n'
+    '   * device there is, as a +1 array (the Copy rule the callers release). */\n'
+    '  if (@available(macOS 10.11, iOS 18.0, *)) {\n'
+    '    params->ret = (obj_handle_t)MTLCopyAllDevices();\n'
+    '  } else {\n'
+    '    id<MTLDevice> device = MTLCreateSystemDefaultDevice();\n'
+    '    params->ret = (obj_handle_t)(device ? [[NSArray alloc] initWithObjects:&device count:1]\n'
+    '                                        : [[NSArray alloc] init]);\n'
+    '    [device release];\n'
+    '  }\n'
+)
+if source.count(original) != 1:
+    raise SystemExit(f'DXMT MTLCopyAllDevices pattern changed: {original!r}')
+output = output_root / relative
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(source.replace(original, replacement), encoding='utf-8')
+print(f'iOS {sys.argv[3]} optional MTLCopyAllDevices: {relative}')

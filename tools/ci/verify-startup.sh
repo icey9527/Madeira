@@ -47,14 +47,20 @@ if [ "$main_minimum" != "${IPHONEOS_DEPLOYMENT_TARGET:-15.6}" ]; then
     echo "主程序 Mach-O 最低系统不符: ${main_minimum:-MISSING}" >&2
     exit 1
 fi
-for symbol in _MTLSetShaderCachePath _MTLGetShaderCachePath; do
+# These must stay weak-imported: the availability checks at their call sites
+# only work while the reference is weak (a strong reference would make
+# dyld refuse the launch on 15.6 instead of binding NULL).
+for symbol in \
+    _MTLSetShaderCachePath _MTLGetShaderCachePath _MTLCopyAllDevices \
+    _os_sync_wait_on_address _os_sync_wait_on_address_with_timeout \
+    _os_sync_wake_by_address_all _os_sync_wake_by_address_any; do
     imports="$(awk -v symbol="$symbol" '{ for (field = 1; field <= NF; field++) if ($field == symbol) print }' "$LOGDIR/startup-imports.txt")"
     if [ -z "$imports" ] || printf '%s\n' "$imports" | grep -qv '(undefined) weak external'; then
         echo "Metal 私有符号必须弱引用: $symbol" >&2
         exit 1
     fi
 done
-echo "Metal 私有缓存符号: weak external"
+echo "Metal 与 os_sync 弱导入符号: weak external"
 if grep -q 'NSt3__13pmr' "$LOGDIR/startup-imports.txt"; then
     echo "iOS 15.6 主启动链仍依赖系统 PMR 符号" >&2
     grep 'NSt3__13pmr' "$LOGDIR/startup-imports.txt" >&2
@@ -102,3 +108,32 @@ if grep -q libmetalirconverter "$LOGDIR/startup-dependencies.txt"; then
     echo "Metal Shader Converter 只能按需 dlopen，不能作为 15.6 主程序的启动依赖" >&2
     exit 1
 fi
+
+# ---- Weak-imported C symbols must be audited -------------------------------
+# A weak import binds to NULL on an iOS that does not export the symbol, so a
+# call that is not behind an availability check or a NULL test jumps to address
+# 0.  Every weak C symbol the startup binaries import must be listed in the
+# audit file with the reason its call sites are safe; a new one fails the build
+# until someone looks at it.
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+AUDIT_FILE="$REPO_ROOT/tools/ci/weak-imports-audited.txt"
+[ -f "$AUDIT_FILE" ] || { echo "缺少弱导入审计清单: $AUDIT_FILE" >&2; exit 1; }
+audited_symbols="$(awk '!/^[[:space:]]*#/ && NF { print $1 }' "$AUDIT_FILE" | LC_ALL=C sort -u)"
+weak_c_symbols="$(awk '/\(undefined\) weak external/ {
+        for (field = 1; field <= NF; field++) {
+            symbol = $field
+            if (symbol !~ /^_[A-Za-z0-9_]+$/) continue
+            if (symbol ~ /^_OBJC_/) continue
+            if (symbol ~ /^_swift/) continue
+            if (symbol ~ /^__swift/) continue
+            print symbol
+        }
+    }' "$LOGDIR/startup-imports.txt" | LC_ALL=C sort -u)"
+unaudited="$(comm -23 <(printf '%s\n' "$weak_c_symbols") <(printf '%s\n' "$audited_symbols"))"
+if [ -n "$unaudited" ]; then
+    echo "未审计的弱导入 C 符号（在不导出它的 iOS 上会绑成 NULL，未经检查的调用会跳到地址 0）:" >&2
+    printf '%s\n' "$unaudited" >&2
+    echo "确认其调用点有 iOS 可用性判断或 NULL 检查后，把符号和理由加进 tools/ci/weak-imports-audited.txt" >&2
+    exit 1
+fi
+echo "弱导入 C 符号: $(printf '%s\n' "$weak_c_symbols" | grep -c . || true) 个，全部已审计"
