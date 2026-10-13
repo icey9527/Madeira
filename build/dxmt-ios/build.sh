@@ -27,16 +27,17 @@ if [ ! -s "$REPO_ROOT/FEX/External/fmt/include/fmt/format.h" ]; then
     exit 1
 fi
 
-# iOS 15 (Madeira port): the internal command library is loaded by the Metal
-# device on the device itself, so its container has to name iOS and its Metal
-# language version has to be one that OS accepts.  Built for macOS 14.0 /
-# Metal 3.1 (the upstream pin, which iOS 17+ accepts) iOS 15.6 refuses it:
+# iOS 15 (Madeira port): the internal command library (dxmt_command.metal, used
+# by dxmt_command.cpp) is loaded by the Metal device on the device itself, so its
+# container has to name iOS and its language version has to be one that OS
+# accepts.  Built for macOS 14.0 / Metal 3.1 (the upstream pin, which iOS 17+
+# accepts) iOS 15.6 refuses it:
 #   Failed to create internal command library: ... "This library format is not
 #   supported on this platform (or was built with an old version of the tools)"
-# MSL 2.4 is the iOS 15 language version and the shaders here use nothing past
-# kernel/texture/threadgroup features, so 2.4 compiles them; a container built
-# with -sdk iphoneos names iOS instead of macOS.  These three knobs override
-# both (DXMT's meson build keeps its own macOS pin for the PE-side DLL).
+# MSL 2.4 is the iOS 15 language version and dxmt_command.metal uses nothing past
+# kernel/texture/threadgroup features, so 2.4 compiles it; -sdk iphoneos makes the
+# container name iOS.  The three knobs below override the defaults, and the three
+# airconv helper shaders keep upstream's flags on purpose (see below).
 # -sdk iphoneos also needs the SDK-qualified standard name below Metal 3.0:
 #   error: invalid value 'metal2.4' in '-std=metal2.4'
 #   note: use 'ios-metal2.4' for 'Metal 2.4 (iOS)' standard
@@ -52,7 +53,12 @@ DXMT_METAL_STD="${DXMT_METAL_STD:-ios-metal2.4}"
 
 mkdir -p "$BUILD_DIR/shader-headers"
 for shader in air_msad air_samplepos air_tessellation; do
-    xcrun -sdk "$DXMT_METAL_SDK" metal -std="$DXMT_METAL_STD" --target="$DXMT_METAL_TARGET" \
+    # These three are linked into airconv's output as helper functions, and the
+    # library airconv writes gets its own version stamps (metallib_writer), so
+    # their own flags stay upstream's: they need at least Metal 3.0
+    # (air_tessellation.metal does not parse below it) and their AIR is not the
+    # container the device reads.
+    xcrun -sdk macosx metal -std=metal3.1 --target=air64-apple-macos14.0 \
         -c "$DXMT_SRC/airconv/shaders/$shader.metal" \
         -o "$BUILD_DIR/shader-headers/$shader.air"
     xxd -n "$shader" -i "$BUILD_DIR/shader-headers/$shader.air" "$BUILD_DIR/shader-headers/$shader.h"
