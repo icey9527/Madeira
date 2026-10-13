@@ -139,3 +139,84 @@ for marker in (mtlcad_marker, gpu_marker):
     if marker not in written:
         raise SystemExit(f'{relative}: {marker!r} missing from the written file')
 print(f'iOS {sys.argv[3]} gpuResourceID guarded in {relative} ({total} sites)')
+
+
+# iOS 15 (Madeira port): airconv stamps everything it emits as macOS, and the
+# Metal runtime refuses such a library outright --
+#
+#   Failed to create MTLLibrary: ... "This library format is not supported on
+#   this platform (or was built with an old version of the tools)"
+#
+# which is where the first real Draw() died on the device (d3dchk3 stage 2: the
+# clear+readback path before it worked, D3DCompile and both Create*Shader calls
+# returned S_OK).  The stamps an iOS 15.6 device accepts were read off the
+# embedded command library this project already ships for iOS: container
+# platform 0x0001 (iOS), OS 0x82, OS version 15.0, and per-function version tags
+# air 2.4 / Metal 2.4.  Emit those.  AIRCONV-ios-stamps
+airconv_files = (
+    ('airconv/airconv_context.cpp', (
+        ('"air64-apple-macosx14.0.0"', '"air64-apple-ios15.0.0"'),
+    ), 'air64-apple-ios15.0.0'),
+    ('airconv/dxbc_converter.cpp', (
+        ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
+        ('createUnsignedInteger(2), createUnsignedInteger(7), createUnsignedInteger(0)',
+         'createUnsignedInteger(2), createUnsignedInteger(4), createUnsignedInteger(0)'),
+        ('createUnsignedInteger(2), createUnsignedInteger(6), createUnsignedInteger(0)',
+         'createUnsignedInteger(2), createUnsignedInteger(4), createUnsignedInteger(0)'),
+        ('createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(2), createUnsignedInteger(0)',
+         'createString("Metal"), createUnsignedInteger(2), createUnsignedInteger(4), createUnsignedInteger(0)'),
+        ('createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(1), createUnsignedInteger(0)',
+         'createString("Metal"), createUnsignedInteger(2), createUnsignedInteger(4), createUnsignedInteger(0)'),
+    ), 'air64-apple-ios15.0.0'),
+    ('airconv/dxso_compile.cpp', (
+        ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
+        ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
+    ), 'air64-apple-ios15.0.0'),
+    ('airconv/ffp_compile.cpp', (
+        ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
+        ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
+        ('{MDString::get(context, "Metal"), u32_md(3), u32_md(2), u32_md(0)}',
+         '{MDString::get(context, "Metal"), u32_md(2), u32_md(4), u32_md(0)}'),
+    ), 'air64-apple-ios15.0.0'),
+    ('airconv/metallib_writer.hpp', (
+        ('enum class Platform : uint16_t { MTLBPlatform_macOS = 0x8001 };',
+         'enum class Platform : uint16_t { MTLBPlatform_macOS = 0x8001, MTLBPlatform_iOS = 0x0001 };'),
+        ('enum class OS : uint8_t {\n  MTLBOS_macOS = 0x81,\n};',
+         'enum class OS : uint8_t {\n  MTLBOS_macOS = 0x81,\n  MTLBOS_iOS = 0x82,\n};'),
+    ), 'MTLBOS_iOS'),
+    ('airconv/metallib_writer.cpp', (
+        ('  header.Platform = Platform::MTLBPlatform_macOS;',
+         '  header.Platform = Platform::MTLBPlatform_iOS;'),
+        ('  header.VersionMajor = 2;\n  header.VersionMinor = 7;',
+         '  header.VersionMajor = 2;\n  header.VersionMinor = 6;'),
+        ('  header.OS = OS::MTLBOS_macOS;',
+         '  header.OS = OS::MTLBOS_iOS;'),
+        ('  header.OSVersionMajor = 14;\n  header.OSVersionMinor = 4;',
+         '  header.OSVersionMajor = 15;\n  header.OSVersionMinor = 0;'),
+        # one per function type (vertex, fragment, object, mesh, kernel)
+        ('          .airVersionMajor = 2,\n          .airVersionMinor = 6,\n          .languageVersionMajor = 3,\n          .languageVersionMinor = 1,',
+         '          .airVersionMajor = 2,\n          .airVersionMinor = 4,\n          .languageVersionMajor = 2,\n          .languageVersionMinor = 4,',
+         None),
+    ), 'MTLBPlatform_iOS'),
+)
+
+for relative, pairs, marker in airconv_files:
+    src = (source_root / relative).read_text(encoding='utf-8')
+    for entry in pairs:
+        original, replacement = entry[0], entry[1]
+        want = entry[2] if len(entry) > 2 else 1
+        count = src.count(original)
+        if want is None:
+            if count < 1:
+                raise SystemExit(f'{relative}: no match for {original!r}')
+        elif count != want:
+            raise SystemExit(f'{relative}: expected {want} match(es), found {count}: {original!r}')
+        src = src.replace(original, replacement)
+    out = output_root / relative
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(src, encoding='utf-8')
+    if marker not in out.read_text(encoding='utf-8'):
+        raise SystemExit(f'{relative}: {marker!r} missing from the written file')
+    if 'air64-apple-macosx' in out.read_text(encoding='utf-8'):
+        raise SystemExit(f'{relative}: a macOS AIR target survives')
+    print(f'iOS {sys.argv[3]} airconv stamps: {relative}')

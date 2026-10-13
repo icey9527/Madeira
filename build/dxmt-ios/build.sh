@@ -398,3 +398,25 @@ if ! LC_ALL=C grep -aq 'initWithObjects:count:' "$APP_COPY"; then
     exit 1
 fi
 echo "MTLCopyAllDevices fallback: present in $APP_COPY"
+
+# Same receipt rule for the AIR stamps airconv writes when it compiles a shader
+# ON THE DEVICE: iOS 15.6 refuses a library stamped for macOS outright
+# ("Failed to create MTLLibrary: ... This library format is not supported on
+# this platform"), which is where the first real Draw() died (d3dchk3 stage 2,
+# after D3DCompile and both Create*Shader calls returned S_OK).  The triple has
+# to be the iOS one in the objects, and no macOS one may survive anywhere.
+if ! LC_ALL=C grep -aq 'air64-apple-ios15.0.0' "$APP_COPY"; then
+    echo "::error::libdxmt_combined.a has no iOS AIR target -- airconv would stamp runtime shaders for macOS"
+    exit 1
+fi
+for ac_obj in airconv_context dxbc_converter dxso_compile ffp_compile metallib_writer; do
+    if ! LC_ALL=C grep -aq 'air64-apple-ios15.0.0' "$OBJ_DIR/$ac_obj.o"; then
+        echo "::error::$ac_obj.o has no iOS AIR target -- prepare-compat.py's airconv rewrite is not in it"
+        exit 1
+    fi
+    if LC_ALL=C grep -aq 'air64-apple-macosx' "$OBJ_DIR/$ac_obj.o"; then
+        echo "::error::$ac_obj.o still carries a macOS AIR target"
+        exit 1
+    fi
+done
+echo "AIR stamps: air64-apple-ios15.0.0 in every airconv object, no macOS AIR target"
