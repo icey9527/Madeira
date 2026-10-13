@@ -200,6 +200,12 @@ enum DeviceDiagnostics {
 /// Triggered without any UI change: while `Documents/metal-selftest.marker`
 /// exists, the next launch runs the test, writes `Documents/metal-selftest.txt`
 /// and removes the marker.
+@_silgen_name("madeira_metal_probe_run")
+private func madeira_metal_probe_run(
+    _ dir: UnsafePointer<CChar>?, _ mode: UnsafePointer<CChar>?,
+    _ report: UnsafeMutablePointer<CChar>?, _ cap: UInt32
+) -> Int32
+
 enum MetalSelfTest {
     private static let vertexSource = """
     #include <metal_stdlib>
@@ -273,6 +279,18 @@ enum MetalSelfTest {
         } catch {
             text += "vertex library FAILED: \(error)\n"
             return
+        }
+
+        // Fixtures compiled by airconv itself, in process: the D3D11 path dies in
+        // the Metal compiler when a shader reads a texture, and this is where the
+        // shape airconv emits can be bisected without Wine or D3D11.
+        let probeDir = docs.appendingPathComponent("airconv-probe")
+        if fm.fileExists(atPath: probeDir.path) {
+            var report = [CChar](repeating: 0, count: 8192)
+            let rc = probeDir.path.withCString { path in
+                madeira_metal_probe_run(path, "310", &report, UInt32(report.count))
+            }
+            text += "probe rc=\(rc)\n" + String(cString: report)
         }
 
         for (name, source) in fragmentSources {

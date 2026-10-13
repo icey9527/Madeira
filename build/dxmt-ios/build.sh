@@ -250,6 +250,14 @@ compile_cxx "$DXMT_SRC/airconv/nt/air_builder.cpp" air_builder
 compile_cxx "$DXMT_SRC/airconv/nt/dxbc_converter_base.cpp" dxbc_converter_base
 compile_cxx "$DXMT_SRC/airconv/transforms/lower_16bit_texread.cpp" lower_16bit_texread
 
+echo "=== airconv probe (ObjC++; the on-device reproduction, see build/airconv-probe/README.md) ==="
+# Compiled as Objective-C++ so it can do the Metal half itself: the ObjC
+# spellings of newLibraryWithData / newRenderPipelineStateWithDescriptor are the
+# ones this project already uses through its d3d12 shim, which keeps the Swift
+# side down to one C call and needs no new Xcode files.
+compile_cxx "$BUILD_DIR/airconv_probe.mm" airconv_probe \
+    "-x objective-c++ -I$DXMT_SRC/airconv -I$DXMT_SRC/airconv/nt -I$DXMT_SRC -I$REPO_ROOT/FEX/External/fmt/include -DFMT_HEADER_ONLY=1"
+
 echo "=== DXBCParser (uses exceptions — override) ==="
 for cpp in BlobContainer.cpp DXBCUtils.cpp ShaderBinary.cpp; do
     name=dxbc_$(basename "$cpp" .cpp)
