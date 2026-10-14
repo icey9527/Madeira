@@ -269,3 +269,145 @@ for relative, pairs, markers in airconv_files:
     if 'air64-apple-macosx' in written:
         raise SystemExit(f'{relative}: a macOS AIR target survives')
     print(f'iOS {sys.argv[3]} airconv stamps: {relative}')
+
+
+# ---------------------------------------------------------------------------
+# iOS 15.6: bisect the one thing the device still refuses.
+#
+# The D3D11 path dies inside Apple's Metal compiler -- AGXMetal13_3 raises
+# "Compiler encountered an internal error" from newRenderPipelineStateWithDescriptor,
+# i.e. while the compiler service reads the AIR module -- exactly when a fragment
+# shader reads a texture.  Everything else works on this device: MSL argument
+# buffers, direct [[texture(n)]] binding, and metadata-declared argument buffers
+# all build pipelines (measured; Documents/metal-selftest-A-D on the iPad).
+#
+# So the difference is in the AIR *shape* airconv emits.  This section adds one
+# switch, MADEIRA_AIRCONV_VARIANT (env, read from madeira.cfg), that changes that
+# shape without a rebuild per variant:
+#
+#   0 (default) nothing changed -- repro
+#   1           air.max_textures 128 -> 31   (128 is macOS's; an iOS device's
+#               per-stage texture argument table is 31, and only a shader that
+#               actually uses a texture has to make that claim real)
+#   2           drop the per-texture/sampler 64-bit metadata member (the
+#               `air.indirect_constant` group); the shader is fed constants
+#   3           both
+#
+# The switch is a runtime env var, so one build answers all of them: set the
+# variant in madeira.cfg, launch, read the dump and the PSO error.
+probe_header = """#pragma once
+
+#include <cstdlib>
+
+/* See build/dxmt-ios/prepare-compat.py: MADEIRA_AIRCONV_VARIANT changes the AIR
+ * shape so the device can bisect what Apple's Metal compiler refuses. */
+namespace dxmt::airconv_probe {
+
+inline int variant() {
+  static const int v = [] {
+    const char *s = std::getenv("MADEIRA_AIRCONV_VARIANT");
+    return s ? std::atoi(s) : 0;
+  }();
+  return v;
+}
+
+/* 1 / 3: declare air.max_textures as 31 instead of 128. */
+inline bool textures_31() { return variant() == 1 || variant() >= 3; }
+
+/* 2 / 3: leave the per-texture/sampler metadata member out of the argument
+ * buffer and feed the shader the constants it would have read: array length 1
+ * (clamp a 2D index to 0) and minLOD clamp 0.  TextureMetadata(1, 0.0f). */
+inline bool drop_metadata() { return variant() == 2 || variant() >= 3; }
+
+} // namespace dxmt::airconv_probe
+"""
+probe_out = output_root / 'airconv/ios15_probe.hpp'
+probe_out.parent.mkdir(parents=True, exist_ok=True)
+probe_out.write_text(probe_header, encoding='utf-8')
+if 'MADEIRA_AIRCONV_VARIANT' not in probe_out.read_text(encoding='utf-8'):
+    raise SystemExit('ios15_probe.hpp: the switch went missing from the file')
+print(f'iOS {sys.argv[3]} airconv variant switch: airconv/ios15_probe.hpp')
+
+CONST = ('llvm::ConstantInt::get(llvm::Type::getInt64Ty(module.getContext()), '
+         '1ull << 32)')
+variant_files = (
+    ('airconv/airconv_context.cpp', (
+        ('#include "airconv_context.hpp"\n',
+         '#include "airconv_context.hpp"\n#include "ios15_probe.hpp"\n'),
+        ('  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_textures", 128);',
+         '  /* 128 is macOS\'s per-stage texture count; an iOS device is 31. */\n'
+         '  M.addModuleFlag(\n'
+         '    Module::ModFlagBehavior::Max, "air.max_textures",\n'
+         '    airconv_probe::textures_31() ? 31 : 128\n'
+         '  );'),
+    ), ('airconv_probe::textures_31()',)),
+    ('airconv/dxbc_converter.cpp', (
+        ('#include "dxbc_converter.hpp"\n',
+         '#include "dxbc_converter.hpp"\n#include "ios15_probe.hpp"\n'),
+        ('    sampler.arg_metadata_index = binding_table.DefineInteger64(\n'
+         '      "meta_s" + std::to_string(range_id), attr_index + 2\n'
+         '    );',
+         '    /* Defined even when the member is dropped: the reader below captures\n'
+         '     * it by value, and an uninitialised index would be UB. */\n'
+         '    sampler.arg_metadata_index = 0;\n'
+         '    if (!airconv_probe::drop_metadata())\n'
+         '      sampler.arg_metadata_index = binding_table.DefineInteger64(\n'
+         '        "meta_s" + std::to_string(range_id), attr_index + 2\n'
+         '      );'),
+        ('      [=, index = sampler.arg_metadata_index](pvalue) {\n'
+         '        // ignore index in SM 5.0\n'
+         '        return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
+         '      }',
+         '      [=, index = sampler.arg_metadata_index](pvalue) -> pvalue {\n'
+         '        if (airconv_probe::drop_metadata())\n'
+         '          return ' + CONST + ';\n'
+         '        return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
+         '      }'),
+        ('    srv.arg_metadata_index = binding_table.DefineInteger64(\n'
+         '      "meta_t" + std::to_string(range_id), attr_index + 1\n'
+         '    );',
+         '    srv.arg_metadata_index = 0;  /* see the sampler above */\n'
+         '    if (!airconv_probe::drop_metadata())\n'
+         '      srv.arg_metadata_index = binding_table.DefineInteger64(\n'
+         '        "meta_t" + std::to_string(range_id), attr_index + 1\n'
+         '      );'),
+        ('        [=, index = srv.arg_metadata_index](pvalue) {\n'
+         '          // ignore index in SM 5.0\n'
+         '          return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
+         '        },\n'
+         '        false',
+         '        [=, index = srv.arg_metadata_index](pvalue) -> pvalue {\n'
+         '          if (airconv_probe::drop_metadata())\n'
+         '            return ' + CONST + ';\n'
+         '          return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
+         '        },\n'
+         '        false'),
+    ), ('airconv_probe::drop_metadata()',)),
+    ('dxmt/dxmt_context.cpp', (
+        ('#include "util_madeira_switch.hpp"\n',
+         '#include "util_madeira_switch.hpp"\n#include "../airconv/ios15_probe.hpp"\n'),
+        ('      encoded_buffer[arg.StructurePtrOffset + 2] = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);',
+         '      if (!airconv_probe::drop_metadata())\n'
+         '        encoded_buffer[arg.StructurePtrOffset + 2] = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);'),
+        ('          encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), min_lod);',
+         '          if (!airconv_probe::drop_metadata())\n'
+         '            encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), min_lod);'),
+    ), ('airconv_probe::drop_metadata()', 'airconv_probe::drop_metadata()')),
+)
+
+for relative, pairs, markers in variant_files:
+    src = (source_root / relative).read_text(encoding='utf-8')
+    for entry in pairs:
+        original, replacement = entry[0], entry[1]
+        count = src.count(original)
+        if count != 1:
+            raise SystemExit(f'{relative}: expected 1 match, found {count}: {original[:70]!r}')
+        src = src.replace(original, replacement)
+    out = output_root / relative
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(src, encoding='utf-8')
+    written = out.read_text(encoding='utf-8')
+    for marker in markers:
+        if marker not in written:
+            raise SystemExit(f'{relative}: {marker!r} missing from the written file')
+    print(f'iOS {sys.argv[3]} airconv variant switch: {relative}')
