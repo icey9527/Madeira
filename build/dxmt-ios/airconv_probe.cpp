@@ -65,6 +65,12 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
     if (!dxbc || !len) { text = "no DXBC"; }
     else {
         LLVMContext context;
+        /* parse_shader (dxbc_converter.cpp) turns opaque pointers off before it
+         * builds its module, and airconv reads pointer element types all over
+         * (getNonOpaquePointerElementType); without this the probe asserts on the
+         * first fixture.  Same setting, so the module this probe hands Metal is
+         * the one the D3D11 path would hand it. */
+        context.setOpaquePointers(false);
         /* Record diagnostics instead of letting the default handler abort the
          * process: airconv's own LLVM is the first one to see this module, so a
          * fatal diagnostic here is the message the Metal compiler would also
