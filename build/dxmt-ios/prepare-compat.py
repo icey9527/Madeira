@@ -328,7 +328,7 @@ if 'MADEIRA_AIRCONV_VARIANT' not in probe_out.read_text(encoding='utf-8'):
     raise SystemExit('ios15_probe.hpp: the switch went missing from the file')
 print(f'iOS {sys.argv[3]} airconv variant switch: airconv/ios15_probe.hpp')
 
-CONST = ('llvm::ConstantInt::get(llvm::Type::getInt64Ty(module.getContext()), '
+CONST = ('llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx.builder.getContext()), '
          '1ull << 32)')
 variant_files = (
     ('airconv/airconv_context.cpp', (
@@ -358,9 +358,9 @@ variant_files = (
          '        // ignore index in SM 5.0\n'
          '        return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '      }',
-         '      [=, index = sampler.arg_metadata_index](pvalue) -> pvalue {\n'
+         '      [=, index = sampler.arg_metadata_index](pvalue) -> IRValue {\n'
          '        if (airconv_probe::drop_metadata())\n'
-         '          return ' + CONST + ';\n'
+         '          return make_irvalue([=](context ctx) -> pvalue { return ' + CONST + '; });\n'
          '        return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '      }'),
         ('    srv.arg_metadata_index = binding_table.DefineInteger64(\n'
@@ -376,9 +376,9 @@ variant_files = (
          '          return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '        },\n'
          '        false',
-         '        [=, index = srv.arg_metadata_index](pvalue) -> pvalue {\n'
+         '        [=, index = srv.arg_metadata_index](pvalue) -> IRValue {\n'
          '          if (airconv_probe::drop_metadata())\n'
-         '            return ' + CONST + ';\n'
+         '            return make_irvalue([=](context ctx) -> pvalue { return ' + CONST + '; });\n'
          '          return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '        },\n'
          '        false'),
