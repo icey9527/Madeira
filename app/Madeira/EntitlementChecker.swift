@@ -324,5 +324,42 @@ enum MetalSelfTest {
                 text += "\(name): library FAILED: \(error)\n"
             }
         }
+
+        // Cases read from Documents/metal-cases/*.metal, so a shape can be tried
+        // without a rebuild: each file is a complete fragment shader against the
+        // same vertex stage.  The D3D11 path dies in the Metal compiler when a
+        // fragment shader READS a texture, and once the AIR airconv emits has
+        // been bisected as far as its own flags allow, the next question is
+        // whether the shape itself compiles when Apple's own frontend writes the
+        // AIR -- which is what this answers, at one launch per batch.
+        let casesDir = docs.appendingPathComponent("metal-cases")
+        if let names = try? fm.contentsOfDirectory(atPath: casesDir.path).sorted() {
+            for name in names where name.hasSuffix(".metal") {
+                let path = casesDir.appendingPathComponent(name)
+                guard let src = try? String(contentsOf: path, encoding: .utf8) else {
+                    text += "\(name): unreadable\n"
+                    continue
+                }
+                do {
+                    let lib = try device.makeLibrary(source: src, options: nil)
+                    guard let fn = lib.makeFunction(name: "fmain") else {
+                        text += "\(name): compiled, but fmain is missing\n"
+                        continue
+                    }
+                    let desc = MTLRenderPipelineDescriptor()
+                    desc.vertexFunction = vs
+                    desc.fragmentFunction = fn
+                    desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+                    do {
+                        _ = try device.makeRenderPipelineState(descriptor: desc)
+                        text += "\(name): library OK, pipeline OK\n"
+                    } catch {
+                        text += "\(name): library OK, pipeline FAILED: \(error)\n"
+                    }
+                } catch {
+                    text += "\(name): library FAILED: \(error)\n"
+                }
+            }
+        }
     }
 }
