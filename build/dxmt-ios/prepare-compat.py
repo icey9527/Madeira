@@ -338,9 +338,9 @@ variant_files = (
          '  /* 128 is macOS\'s per-stage texture count; an iOS device is 31. */\n'
          '  M.addModuleFlag(\n'
          '    Module::ModFlagBehavior::Max, "air.max_textures",\n'
-         '    airconv_probe::textures_31() ? 31 : 128\n'
+         '    dxmt::airconv_probe::textures_31() ? 31 : 128\n'
          '  );'),
-    ), ('airconv_probe::textures_31()',)),
+    ), ('dxmt::airconv_probe::textures_31()',)),
     ('airconv/dxbc_converter.cpp', (
         ('#include "dxbc_converter.hpp"\n',
          '#include "dxbc_converter.hpp"\n#include "ios15_probe.hpp"\n'),
@@ -350,7 +350,7 @@ variant_files = (
          '    /* Defined even when the member is dropped: the reader below captures\n'
          '     * it by value, and an uninitialised index would be UB. */\n'
          '    sampler.arg_metadata_index = 0;\n'
-         '    if (!airconv_probe::drop_metadata())\n'
+         '    if (!dxmt::airconv_probe::drop_metadata())\n'
          '      sampler.arg_metadata_index = binding_table.DefineInteger64(\n'
          '        "meta_s" + std::to_string(range_id), attr_index + 2\n'
          '      );'),
@@ -359,7 +359,7 @@ variant_files = (
          '        return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '      }',
          '      [=, index = sampler.arg_metadata_index](pvalue) -> IRValue {\n'
-         '        if (airconv_probe::drop_metadata())\n'
+         '        if (dxmt::airconv_probe::drop_metadata())\n'
          '          return make_irvalue([=](context ctx) -> pvalue { return ' + CONST + '; });\n'
          '        return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '      }'),
@@ -367,7 +367,7 @@ variant_files = (
          '      "meta_t" + std::to_string(range_id), attr_index + 1\n'
          '    );',
          '    srv.arg_metadata_index = 0;  /* see the sampler above */\n'
-         '    if (!airconv_probe::drop_metadata())\n'
+         '    if (!dxmt::airconv_probe::drop_metadata())\n'
          '      srv.arg_metadata_index = binding_table.DefineInteger64(\n'
          '        "meta_t" + std::to_string(range_id), attr_index + 1\n'
          '      );'),
@@ -377,22 +377,22 @@ variant_files = (
          '        },\n'
          '        false',
          '        [=, index = srv.arg_metadata_index](pvalue) -> IRValue {\n'
-         '          if (airconv_probe::drop_metadata())\n'
+         '          if (dxmt::airconv_probe::drop_metadata())\n'
          '            return make_irvalue([=](context ctx) -> pvalue { return ' + CONST + '; });\n'
          '          return get_item_in_argbuf_binding_table(binding_table_index, index);\n'
          '        },\n'
          '        false'),
-    ), ('airconv_probe::drop_metadata()',)),
+    ), ('dxmt::airconv_probe::drop_metadata()',)),
     ('dxmt/dxmt_context.cpp', (
         ('#include "util_madeira_switch.hpp"\n',
          '#include "util_madeira_switch.hpp"\n#include "../airconv/ios15_probe.hpp"\n'),
         ('      encoded_buffer[arg.StructurePtrOffset + 2] = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);',
-         '      if (!airconv_probe::drop_metadata())\n'
+         '      if (!dxmt::airconv_probe::drop_metadata())\n'
          '        encoded_buffer[arg.StructurePtrOffset + 2] = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);'),
         ('          encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), min_lod);',
-         '          if (!airconv_probe::drop_metadata())\n'
+         '          if (!dxmt::airconv_probe::drop_metadata())\n'
          '            encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), min_lod);'),
-    ), ('airconv_probe::drop_metadata()', 'airconv_probe::drop_metadata()')),
+    ), ('dxmt::airconv_probe::drop_metadata()',)),
 )
 
 for relative, pairs, markers in variant_files:
