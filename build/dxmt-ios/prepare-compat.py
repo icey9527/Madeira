@@ -317,7 +317,18 @@ inline bool textures_31() { return variant() == 1 || variant() >= 3; }
 /* 2 / 3: leave the per-texture/sampler metadata member out of the argument
  * buffer and feed the shader the constants it would have read: array length 1
  * (clamp a 2D index to 0) and minLOD clamp 0.  TextureMetadata(1, 0.0f). */
-inline bool drop_metadata() { return variant() == 2 || variant() >= 3; }
+inline bool drop_metadata() { return variant() == 2 || variant() == 3 || variant() >= 5; }
+
+/* 4 / 5: number textures and UAVs from 0 instead of from 128 (SRV) / 512 (UAV).
+ *
+ * Those bases are DXMT's own and say nothing about the device: the argument
+ * buffer slot a texture lands in is chosen by the encoder, and the
+ * `air.location_index` airconv writes is what MSL would have taken from
+ * [[id(n)]].  The handed MSL argument buffer -- the one shape measured to
+ * compile on this device -- numbers its texture [[id(0)]], not [[id(128)]].
+ * Only the location index changes; the argument buffer's own member numbering
+ * (StructurePtrOffset) is a separate thing and stays put. */
+inline bool index_from_zero() { return variant() >= 4; }
 
 } // namespace dxmt::airconv_probe
 """
@@ -344,6 +355,16 @@ variant_files = (
     ('airconv/dxbc_converter.cpp', (
         ('#include "dxbc_converter.hpp"\n',
          '#include "dxbc_converter.hpp"\n#include "ios15_probe.hpp"\n'),
+        # Variant 4/5: renumber textures and UAVs from 0 (SRV and UAV alike, so
+        # the two never collide); see index_from_zero() in the probe header.
+        ('    auto attr_index = GetArgumentIndex(SM50BindingType::SRV, range_id);\n',
+         '    auto attr_index = dxmt::airconv_probe::index_from_zero()\n'
+         '                        ? range_id * 3\n'
+         '                        : GetArgumentIndex(SM50BindingType::SRV, range_id);\n'),
+        ('    auto attr_index = GetArgumentIndex(SM50BindingType::UAV, range_id);\n',
+         '    auto attr_index = dxmt::airconv_probe::index_from_zero()\n'
+         '                        ? range_id * 3 + 64\n'
+         '                        : GetArgumentIndex(SM50BindingType::UAV, range_id);\n'),
         ('    sampler.arg_metadata_index = binding_table.DefineInteger64(\n'
          '      "meta_s" + std::to_string(range_id), attr_index + 2\n'
          '    );',
