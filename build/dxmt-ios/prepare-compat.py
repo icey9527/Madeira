@@ -396,14 +396,18 @@ variant_files = (
 )
 
 for relative, pairs, markers in variant_files:
-    src = (source_root / relative).read_text(encoding='utf-8')
+    # Read what the section above left behind when it wrote this file, not the
+    # pristine source: several of these files already carry the iOS AIR stamps,
+    # and re-reading source_root here would write them back to macOS -- the same
+    # silent drop the note at the top of this script is about.
+    out = output_root / relative
+    src = (out if out.exists() else source_root / relative).read_text(encoding='utf-8')
     for entry in pairs:
         original, replacement = entry[0], entry[1]
         count = src.count(original)
         if count != 1:
             raise SystemExit(f'{relative}: expected 1 match, found {count}: {original[:70]!r}')
         src = src.replace(original, replacement)
-    out = output_root / relative
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(src, encoding='utf-8')
     written = out.read_text(encoding='utf-8')
