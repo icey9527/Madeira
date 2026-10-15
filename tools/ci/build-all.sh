@@ -693,6 +693,47 @@ else:
     s = s.replace(old, new, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
     print('[patch] applied: arm64x_check_call iOS floor guard')
+
+# MADEIRA: the SAME missing lower bound, one layer over.
+#
+# ntdll's arm64x_check_call now rejects a target at or below the iOS user-space
+# floor and takes .Lexit, which hands that target to the x64 exit thunk. The
+# thunk ends in FEX's own ExitToX64, whose FFS sniff does `ldr x16, [x9]` with
+# the same unchecked x9 -- so the bad address simply crashes one layer later.
+# The 02:14 device log shows exactly that: ntdll no longer appears in the
+# fault, and the PC is libarm64ecfex.dll+0x11348, whose bytes are
+#   f9400130 (ldr x16,[x9])  d2916911 f2a91891 f2cb1131 f2eaa411 eb11021f
+# i.e. the movz/movk ladder that builds 0x5520588948C48B48, the FFS magic.
+#
+# ExitToX64 documents x16/x17 as scratch, so the check is free: an x9 at or
+# below the floor is never a real FFS (the app's own region starts at
+# address-map=0x10216c000 and above on iOS), and falling through to
+# ios_ffs_no_bypass is the documented "not FFS -> normal emulation" path.
+p = 'FEX/Source/Windows/ARM64EC/Module.S'
+s = io.open(p, encoding='utf-8').read()
+if 'MADEIRA: FFS SIGNATURE SNIFF' in s:
+    print('[patch] already applied: ExitToX64 FFS floor guard')
+else:
+    old = "  ldr x16, [x9]\n  movz x17, #0x8b48\n"
+    new = "\n".join([
+        "  /* MADEIRA: FFS SIGNATURE SNIFF NEEDS A FLOOR. x9 here is the target the",
+        "   * caller could not classify, and it reaches this line unchecked, so a bad",
+        "   * pointer faults inside FEX exactly as it did inside ntdll's",
+        "   * arm64x_check_call. 0x100000000 is the iOS user-space floor and nothing is",
+        "   * mapped at or below it, so an x9 there can only be a bad target: take the",
+        "   * documented non-FFS path instead of dereferencing it. x16 is scratch. */",
+        "  movz x16, #0x1, lsl #32",
+        "  cmp x9, x16",
+        "  b.ls ios_ffs_no_bypass",
+        "  ldr x16, [x9]",
+        "  movz x17, #0x8b48",
+        "",
+    ])
+    if old not in s:
+        raise SystemExit('[patch] ExitToX64 FFS anchor not found -- FEX Module.S changed?')
+    s = s.replace(old, new, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: ExitToX64 FFS floor guard')
 PYEOF
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
