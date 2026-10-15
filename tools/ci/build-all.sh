@@ -313,14 +313,16 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
-  step "FEX iOS 行为补丁：32 位 RaiseException 定位日志（CI 侧，不改行为）"
-  # 上游的 RaiseException shim 是裸 UNIMPLEMENTED()，实测 32 位 C++ 抛异常时
-  # 退出码 0xFE63002C，正对应 Misc.cpp 第 44 行。该 shim 不在导出表，源码里也没
-  # 有调用点，所以先只记录宿主返回地址和客户机 RIP，再保持 UNIMPLEMENTED() 原样；
-  # 这样下一轮可以按 host_lr 的落点判断是谁按地址调用的它，而不是继续猜。
-  #
-  # 注意：UNIMPLEMENTED() 把 __LINE__ 编进退出码。诊断调用必须挤在同一物理行，
-  # 让宏仍然位于 Misc.cpp:44，退出码保持 0xFE63002C 以便设备侧做 A/B 比对。
+  step "FEX iOS 行为补丁：32 位 RaiseException 分支 A 修复（CI 侧）"
+  # 18:35 真机测量把调用者钉死了：host_lr 落在 libwow64fex 自身的
+  # _Unwind_RaiseException+0x70，self 正是同一镜像里的 RaiseException。
+  # 这是宿主 libunwind 的 SEH C++ 抛出（STATUS_GCC_THROW=0x20474343），
+  # 不是客户机 JIT 通过导入跳板调过来的。因此：
+  #   1) 保持 RaiseException 这个 WinAPI shim 对外的 UNIMPLEMENTED() 语义；
+  #   2) 只把 __imp_RaiseException / __imp_aux_RaiseException 指向私有宿主
+  #      抛出路径，构造 EXCEPTION_RECORD 后走 RtlRaiseException；
+  # 2026-10-12 的 run59/阶段 1 已经验证过“直接 RtlRaiseException + 放宽 unwind
+  # guard”能让两个 32 位游戏进入加载窗口；这次只把私有宿主抛出路径恢复回来。
   python3 - <<'PYEOF'
 import io
 
@@ -363,8 +365,9 @@ if 'MadeiraWow64RaiseDiagnostic' not in s:
         '}\n'
         '#endif\n'
         '\n'
-        '/* MADEIRA: this is deliberately a diagnostic, not a replacement raise path.\n'
-        ' * The shim\'s UNIMPLEMENTED() below still terminates with the upstream code. */\n'
+        '/* MADEIRA: diagnostic only.  The external WinAPI shim remains UNIMPLEMENTED;\n'
+        ' * the private host pointer installed from Misc.cpp calls this before asking\n'
+        ' * ntdll to unwind the host C++ exception. */\n'
         'extern "C" void MadeiraWow64RaiseDiagnostic(uintptr_t HostLr, uintptr_t Self, DWORD Code, DWORD Flags,\n'
         '                                            DWORD NArgs, const ULONG_PTR *Args) {\n'
         '#ifdef FEX_IOS_HOST\n'
@@ -397,29 +400,58 @@ old = ('DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExc
        'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
        '  UNIMPLEMENTED();\n'
        '}')
-# Keep the macro invocation physically on line 44, matching upstream, so the
-# encoded exit status remains 0xFE63002C.
-new = ('extern "C" void MadeiraWow64RaiseDiagnostic(uintptr_t, uintptr_t, DWORD, DWORD, DWORD, const ULONG_PTR *); '
-       'DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags, '
-       'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
-       '  MadeiraWow64RaiseDiagnostic(reinterpret_cast<uintptr_t>(__builtin_return_address(0)), reinterpret_cast<uintptr_t>(&RaiseException), dwExceptionCode, dwExceptionFlags, nNumberOfArguments, lpArguments); UNIMPLEMENTED();\n'
-       '}')
+new = '''#if defined(FEX_IOS_HOST) && !defined(ARCHITECTURE_arm64ec)
+extern "C" void MadeiraWow64RaiseDiagnostic(uintptr_t, uintptr_t, DWORD, DWORD, DWORD, const ULONG_PTR *);
+extern "C" VOID WINAPI RtlRaiseException(PEXCEPTION_RECORD ExceptionRecord);
+
+/* MADEIRA: private host raise path.  The external RaiseException shim
+ * remains UNIMPLEMENTED() below, but this module's own libunwind resolves
+ * __imp_RaiseException to this function.  Build the record as kernelbase
+ * does, then let the host ntdll unwind it. */
+static void MadeiraHostRaiseException(DWORD dwExceptionCode, DWORD dwExceptionFlags,
+                                      DWORD nNumberOfArguments, const ULONG_PTR *lpArguments) {
+  EXCEPTION_RECORD Rec {};
+  Rec.ExceptionCode = dwExceptionCode;
+  Rec.ExceptionFlags = dwExceptionFlags;
+  if (nNumberOfArguments > EXCEPTION_MAXIMUM_PARAMETERS) {
+    nNumberOfArguments = EXCEPTION_MAXIMUM_PARAMETERS;
+  }
+  Rec.NumberParameters = nNumberOfArguments;
+  if (lpArguments) {
+    for (DWORD i = 0; i < nNumberOfArguments; ++i) {
+      Rec.ExceptionInformation[i] = lpArguments[i];
+    }
+  }
+  MadeiraWow64RaiseDiagnostic(reinterpret_cast<uintptr_t>(__builtin_return_address(0)),
+                              reinterpret_cast<uintptr_t>(&MadeiraHostRaiseException),
+                              dwExceptionCode, dwExceptionFlags, nNumberOfArguments, lpArguments);
+  RtlRaiseException(&Rec);
+  NtTerminateProcess(NtCurrentProcess(), dwExceptionCode);
+}
+
+typedef void (*MadeiraRaiseExceptionFn)(DWORD, DWORD, DWORD, const ULONG_PTR *);
+MadeiraRaiseExceptionFn __imp_RaiseException = MadeiraHostRaiseException;
+MadeiraRaiseExceptionFn __imp_aux_RaiseException = MadeiraHostRaiseException;
+
+extern "C" void RaiseException(DWORD dwExceptionCode, DWORD dwExceptionFlags,
+                               DWORD nNumberOfArguments, CONST ULONG_PTR *lpArguments) {
+  UNIMPLEMENTED();
+}
+#else
+DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags,
+                                     DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {
+  UNIMPLEMENTED();
+}
+#endif'''
 if old in s:
     s = s.replace(old, new, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
-    print('[patch] applied: WinAPI RaiseException diagnostic (line 44 preserved)')
-elif 'MadeiraWow64RaiseDiagnostic' in s:
-    print('[patch] already applied: WinAPI RaiseException diagnostic')
+    print('[patch] applied: private host RaiseException path')
+elif 'MadeiraHostRaiseException' in s:
+    print('[patch] already applied: private host RaiseException path')
 else:
     raise SystemExit('[patch] RaiseException pattern not found')
-
-# Sanity-check the line invariant before the rest of the build proceeds.
-lines = io.open(p, encoding='utf-8').read().splitlines()
-if len(lines) < 44 or 'UNIMPLEMENTED();' not in lines[43]:
-    raise SystemExit('[patch] UNIMPLEMENTED is not on Misc.cpp:44')
-print('[patch] verified: UNIMPLEMENTED remains on Misc.cpp:44')
 PYEOF
-
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
     # ConfigValues.inl 等生成头（约 1 分钟），其余原生库由 stage_app 空桩。
