@@ -313,7 +313,7 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
-  step "FEX iOS 行为补丁：32 位 RaiseException 分支 A 修复（CI 侧）"
+  step "FEX iOS 行为补丁：RaiseException 路由 + 池内 Threads 构造（CI 侧）"
   # 18:35 真机测量把调用者钉死了：host_lr 落在 libwow64fex 自身的
   # _Unwind_RaiseException+0x70，self 正是同一镜像里的 RaiseException。
   # 这是宿主 libunwind 的 SEH C++ 抛出（STATUS_GCC_THROW=0x20474343），
@@ -322,6 +322,15 @@ PYEOF
   #   2) 只把 __imp_RaiseException / __imp_aux_RaiseException 指向私有宿主
   #      抛出路径，构造 EXCEPTION_RECORD 后走 RtlRaiseException；
   # 2026-10-12 的 run59/阶段 1 已经验证过“直接 RtlRaiseException + 放宽 unwind
+  # guard”能让两个 32 位游戏进入加载窗口；这次只把私有宿主抛出路径恢复回来。
+  #
+  # 2026-10-15 19:27 真机又抓到真正的抛出点：host_lr=_Unwind_RaiseException+0x70，
+  # 三帧 libunwind 报 0x185c4c(__next_prime 的 __throw_overflow_error 返回处)、
+  # 0x102afc(BTCpuThreadInit+0x260，紧跟 Threads.emplace)、wow64.dll+0x1c87c。
+  # 异常消息是 “__next_prime overflow”。根因是 iOS 池拷贝发生在模块 C++ 全局
+  # 构造之前，池内 Threads(unordered_map) 是 raw-zero；libc++ 零状态的
+  # max_load_factor 是 0，emplace 推荐出无穷桶数就溢出。因此在池内执行的
+  # BTCpuProcessInit 开头显式构造 Threads。
   # guard”能让两个 32 位游戏进入加载窗口；这次只把私有宿主抛出路径恢复回来。
   python3 - <<'PYEOF'
 import io
@@ -451,6 +460,40 @@ elif 'MadeiraHostRaiseException' in s:
     print('[patch] already applied: private host RaiseException path')
 else:
     raise SystemExit('[patch] RaiseException pattern not found')
+
+# MADEIRA: the iOS JIT pool copies this PE before its C++ global constructors
+# run, so the copy that actually executes has raw-zero state for non-trivial
+# globals.  libc++'s zero-state unordered_map has max_load_factor == 0, and the
+# first Threads.emplace() then recommends an infinite bucket count, so
+# __next_prime throws std::overflow_error("__next_prime overflow") inside
+# BTCpuThreadInit.  Construct the map in the executing copy, before its first
+# use in BTCpuProcessInit.
+p = 'FEX/Source/Windows/WOW64/Module.cpp'
+s = io.open(p, encoding='utf-8').read()
+threads_marker = 'new (&Threads) std::unordered_map<DWORD, FEXCore::Core::InternalThreadState*>();'
+if threads_marker not in s:
+    if '#include <unordered_map>\n' not in s:
+        raise SystemExit('[patch] unordered_map include not found')
+    if '#include <new>\n' not in s:
+        s = s.replace('#include <unordered_map>\n', '#include <unordered_map>\n#include <new>\n', 1)
+    anchor = 'void BTCpuProcessInit() {\n  FEX::Windows::InitCRTProcess();\n'
+    if s.count(anchor) != 1:
+        raise SystemExit('[patch] BTCpuProcessInit anchor not unique: %d' % s.count(anchor))
+    replacement = ('void BTCpuProcessInit() {\n'
+                   '#ifdef FEX_IOS_HOST\n'
+                   '  /* MADEIRA: the JIT pool copies this PE before the C++ global\n'
+                   '   * constructors run, so in the copy that executes Threads is raw zero\n'
+                   '   * state.  libc++\'s zero-state unordered_map has max_load_factor == 0;\n'
+                   '   * the first emplace then recommends an infinite bucket count and\n'
+                   '   * __next_prime throws std::overflow_error.  Construct the map here. */\n'
+                   '  new (&Threads) std::unordered_map<DWORD, FEXCore::Core::InternalThreadState*>();\n'
+                   '#endif\n'
+                   '  FEX::Windows::InitCRTProcess();\n')
+    s = s.replace(anchor, replacement, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: construct Threads in the executing pool copy')
+else:
+    print('[patch] already applied: construct Threads in the executing pool copy')
 PYEOF
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
