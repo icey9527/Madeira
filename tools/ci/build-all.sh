@@ -313,43 +313,6 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
-  step "FEX iOS 行为补丁：32 位 RaiseException（CI 侧）"
-  # 上游 FEX 的 WOW64 WinAPI 里 RaiseException 是裸 UNIMPLEMENTED()：32 位程序
-  # 一抛异常（MinGW 的 C++ 运行时就会抛），进程就以 0xFE63002C 退出，Wine 的
-  # SEH 根本没机会处理。按 Windows 的做法构造 EXCEPTION_RECORD 交给 ntdll 的
-  # RtlRaiseException；它正常不会返回，一旦返回就终止该进程。
-  python3 - <<'PYEOF'
-import io
-p = 'FEX/Source/Windows/Common/WinAPI/Misc.cpp'
-s = io.open(p, encoding='utf-8').read()
-old = ('DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags, '
-       'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
-       '  UNIMPLEMENTED();\n'
-       '}')
-new = ('extern "C" VOID WINAPI RtlRaiseException(PEXCEPTION_RECORD ExceptionRecord);\n\n'
-       'DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags, '
-       'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
-       '  /* MADEIRA: patched by tools/ci/build-all.sh.  Upstream is UNIMPLEMENTED()\n'
-       '   * here, which turns every 32-bit C++ throw into exit code 0xFE63002C before\n'
-       '   * Wine can dispatch it.  Build the record Windows would and hand it over. */\n'
-       '  EXCEPTION_RECORD Rec {};\n'
-       '  Rec.ExceptionCode = dwExceptionCode;\n'
-       '  Rec.ExceptionFlags = dwExceptionFlags;\n'
-       '  Rec.NumberParameters = nNumberOfArguments;\n'
-       '  for (DWORD i = 0; i < nNumberOfArguments && i < EXCEPTION_MAXIMUM_PARAMETERS; ++i)\n'
-       '    Rec.ExceptionInformation[i] = lpArguments ? lpArguments[i] : 0;\n'
-       '  RtlRaiseException(&Rec);\n'
-       '  NtTerminateProcess(NtCurrentProcess(), dwExceptionCode);\n'
-       '}')
-if old in s:
-    s = s.replace(old, new, 1)
-    print('[patch] applied: WOW64 RaiseException')
-elif 'MADEIRA: patched by tools/ci/build-all.sh' in s:
-    print('[patch] already applied: WOW64 RaiseException')
-else:
-    raise SystemExit('[patch] RaiseException pattern not found — FEX 上游变了？核对 HANDOFF CI 侧补丁')
-io.open(p, 'w', encoding='utf-8').write(s)
-PYEOF
 
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
