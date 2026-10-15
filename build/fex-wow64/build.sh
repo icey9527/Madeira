@@ -8,10 +8,23 @@ set -eu
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PATH="$R/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin:$PATH"
 B="$R/FEX/build-wow64"
+TOOLCHAIN="$R/toolchains/llvm-mingw-20260421-ucrt-macos-universal"
+# Re-root package discovery inside the MinGW sysroot and turn the three
+# QUIET-but-leaky finds off by name.  The toolchain file sets
+# CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY, but with an empty CMAKE_FIND_ROOT_PATH
+# that has no effect: on a runner with Homebrew's fmt/range-v3 installed,
+# find_package() finds the *host* config and CMake then fails with
+#   IMPORTED_IMPLIB not set for imported target "fmt::fmt" configuration "RELEASE"
+# because a macOS dylib has no import library for the PE target.  FEX bundles all
+# three under External/ and the iOS build already uses those copies.
 if [ ! -f "$B/CMakeCache.txt" ]; then
     cmake -S "$R/FEX" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$R/FEX/Data/CMake/toolchain_mingw.cmake" \
         -DMINGW_TRIPLE=aarch64-w64-mingw32 \
+        -DCMAKE_FIND_ROOT_PATH="$TOOLCHAIN/aarch64-w64-mingw32" \
+        -DCMAKE_DISABLE_FIND_PACKAGE_fmt=ON \
+        -DCMAKE_DISABLE_FIND_PACKAGE_range-v3=ON \
+        -DCMAKE_DISABLE_FIND_PACKAGE_unordered_dense=ON \
         -DFEX_IOS_HOST_BUILD=ON -DCMAKE_C_FLAGS=-DFEX_IOS_HOST \
         -DCMAKE_CXX_FLAGS=-DFEX_IOS_HOST -DCMAKE_ASM_FLAGS=-DFEX_IOS_HOST \
         -DENABLE_LTO=OFF -DENABLE_ASSERTIONS=OFF -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
