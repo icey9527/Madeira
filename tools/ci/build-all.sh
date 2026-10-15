@@ -313,7 +313,7 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
-  step "FEX iOS 行为补丁：RaiseException 路由 + 池内 Threads 构造（CI 侧）"
+  step "FEX iOS 行为补丁：RaiseException 路由 + 池内 C++ 全局构造（CI 侧）"
   # 18:35 真机测量把调用者钉死了：host_lr 落在 libwow64fex 自身的
   # _Unwind_RaiseException+0x70，self 正是同一镜像里的 RaiseException。
   # 这是宿主 libunwind 的 SEH C++ 抛出（STATUS_GCC_THROW=0x20474343），
@@ -328,9 +328,12 @@ PYEOF
   # 三帧 libunwind 报 0x185c4c(__next_prime 的 __throw_overflow_error 返回处)、
   # 0x102afc(BTCpuThreadInit+0x260，紧跟 Threads.emplace)、wow64.dll+0x1c87c。
   # 异常消息是 “__next_prime overflow”。根因是 iOS 池拷贝发生在模块 C++ 全局
-  # 构造之前，池内 Threads(unordered_map) 是 raw-zero；libc++ 零状态的
-  # max_load_factor 是 0，emplace 推荐出无穷桶数就溢出。因此在池内执行的
-  # BTCpuProcessInit 开头显式构造 Threads。
+  # 构造之前：mingw 的 DllMainCRTStartup 把构造函数跑在“原图”上，而真正执行的是
+  # 池内副本，池里的 .data 是构造前的快照。Threads 修好后，下一处是
+  # std::chrono::system_clock::now() 里的全局函数指针（libwow64fex+0x1a38fc，
+  # x8=0 -> blr x8 -> pc=0），narci2 和 EDEN 死在同一地址。因此不再逐个对象打
+  # 补丁，而是在 CRT_iOS.cpp 的 InitCRTProcess 里像非 iOS 的 CRT.cpp 一样，
+  # 在池内副本重跑一遍 GNU 构造函数列表。
   # guard”能让两个 32 位游戏进入加载窗口；这次只把私有宿主抛出路径恢复回来。
   python3 - <<'PYEOF'
 import io
@@ -461,39 +464,59 @@ elif 'MadeiraHostRaiseException' in s:
 else:
     raise SystemExit('[patch] RaiseException pattern not found')
 
-# MADEIRA: the iOS JIT pool copies this PE before its C++ global constructors
-# run, so the copy that actually executes has raw-zero state for non-trivial
-# globals.  libc++'s zero-state unordered_map has max_load_factor == 0, and the
-# first Threads.emplace() then recommends an infinite bucket count, so
-# __next_prime throws std::overflow_error("__next_prime overflow") inside
-# BTCpuThreadInit.  Construct the map in the executing copy, before its first
-# use in BTCpuProcessInit.
-p = 'FEX/Source/Windows/WOW64/Module.cpp'
+# MADEIRA: the iOS JIT pool copies this PE before mingw's DllMainCRTStartup
+# runs on the original image, so the copy that actually executes has raw-zero
+# state for every global with a non-trivial constructor.  Threads
+# (std::unordered_map) threw __next_prime overflow; with that fixed, libc++'s
+# system_clock call pointer was the next pc=0.  Run the GNU constructor list
+# again inside the pool copy, exactly as the non-iOS CRT.cpp already does.
+p = 'FEX/Source/Windows/Common/CRT/CRT_iOS.cpp'
 s = io.open(p, encoding='utf-8').read()
-threads_marker = 'new (&Threads) std::unordered_map<DWORD, FEXCore::Core::InternalThreadState*>();'
-if threads_marker not in s:
-    if '#include <unordered_map>\n' not in s:
-        raise SystemExit('[patch] unordered_map include not found')
-    if '#include <new>\n' not in s:
-        s = s.replace('#include <unordered_map>\n', '#include <unordered_map>\n#include <new>\n', 1)
-    anchor = 'void BTCpuProcessInit() {\n  FEX::Windows::InitCRTProcess();\n'
-    if s.count(anchor) != 1:
-        raise SystemExit('[patch] BTCpuProcessInit anchor not unique: %d' % s.count(anchor))
-    replacement = ('void BTCpuProcessInit() {\n'
-                   '#ifdef FEX_IOS_HOST\n'
-                   '  /* MADEIRA: the JIT pool copies this PE before the C++ global\n'
-                   '   * constructors run, so in the copy that executes Threads is raw zero\n'
-                   '   * state.  libc++\'s zero-state unordered_map has max_load_factor == 0;\n'
-                   '   * the first emplace then recommends an infinite bucket count and\n'
-                   '   * __next_prime throws std::overflow_error.  Construct the map here. */\n'
-                   '  new (&Threads) std::unordered_map<DWORD, FEXCore::Core::InternalThreadState*>();\n'
-                   '#endif\n'
-                   '  FEX::Windows::InitCRTProcess();\n')
-    s = s.replace(anchor, replacement, 1)
+if '__CTOR_LIST__' not in s:
+    if '#include <rpmalloc/rpmalloc.h>\n' not in s:
+        raise SystemExit('[patch] CRT_iOS rpmalloc include not found')
+    s = s.replace('#include <rpmalloc/rpmalloc.h>\n',
+                  '#include <rpmalloc/rpmalloc.h>\n#include <iterator>\n\nextern "C" void (*__CTOR_LIST__[])();\n', 1)
+    old = ('void InitCRTProcess() {\n'
+           '  // mingw\'s default startup already ran the C++ ctors. Ensure the rpmalloc\n'
+           '  // global heap is up (idempotent) before any per-thread init below.\n'
+           '  rpmalloc_initialize(nullptr);\n'
+           '}')
+    if s.count(old) != 1:
+        raise SystemExit('[patch] CRT_iOS InitCRTProcess pattern not found')
+    new = ('void InitCRTProcess() {\n'
+           '  /* MADEIRA: mingw\'s DllMainCRTStartup runs the GNU ctors on the ORIGINAL\n'
+           '   * image, but on this host the copy that executes is the iOS JIT pool\n'
+           '   * copy, whose .data was snapshotted before that.  Every non-trivial\n'
+           '   * global is therefore raw zero there: Threads threw __next_prime\n'
+           '   * overflow, and libc++\'s system_clock call pointer was the next pc=0.\n'
+           '   * Run the constructor list again in the copy that actually runs.\n'
+           '   * rpmalloc_initialize stays first (idempotent); the guard makes a\n'
+           '   * repeated call from either image harmless. */\n'
+           '  static bool RanCtors;\n'
+           '  if (RanCtors) {\n'
+           '    return;\n'
+           '  }\n'
+           '  RanCtors = true;\n'
+           '\n'
+           '  rpmalloc_initialize(nullptr);\n'
+           '\n'
+           '  auto CtorBegin = &__CTOR_LIST__[1];\n'
+           '  auto CtorEnd = CtorBegin;\n'
+           '  while (*CtorEnd != nullptr) {\n'
+           '    CtorEnd++;\n'
+           '  }\n'
+           '  for (auto It = std::reverse_iterator(CtorEnd); It != std::reverse_iterator(CtorBegin); ++It) {\n'
+           '    if (*It) {\n'
+           '      (**It)();\n'
+           '    }\n'
+           '  }\n'
+           '}')
+    s = s.replace(old, new, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
-    print('[patch] applied: construct Threads in the executing pool copy')
+    print('[patch] applied: run the pool copy GNU ctors in InitCRTProcess')
 else:
-    print('[patch] already applied: construct Threads in the executing pool copy')
+    print('[patch] already applied: run the pool copy GNU ctors in InitCRTProcess')
 PYEOF
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
