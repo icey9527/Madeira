@@ -16,12 +16,17 @@ from pathlib import Path
 DIRS = ("i386-windows", "aarch64-windows", "arm64ec-windows", "d3d12")
 MANIFEST = Path(__file__).with_name("upstream-compat.sha256")
 
-# Built by CI from the pinned FEX source instead of being vendored, because the
-# upstream prebuild is the one that NULL-derefs in libwow64fex on iOS 15.6
-# (see tools/ci/build-all.sh and HANDOFF).  These paths are still shipped, so
-# they must exist -- they are just not hash-pinned to upstream any more.
+# Built by CI from the pinned FEX/Wine sources instead of being vendored:
+#   * xtajit.dll  -- the upstream prebuild is the one that NULL-derefs inside
+#     libwow64fex on iOS 15.6;
+#   * ntdll.dll   -- the upstream prebuild assumes the native layer has already
+#     allocated native TLS, which this port's alloc_thread_tls does later, so the
+#     32-bit loader is rebuilt with that order fixed (build/wine-wow64/).
+# See HANDOFF; both files are still shipped, so they must exist -- they are just
+# no longer hash-pinned to upstream.
 BUILD_OUTPUTS = frozenset({
     "app/Madeira/aarch64-windows/xtajit.dll",
+    "app/Madeira/aarch64-windows/ntdll.dll",
 })
 
 

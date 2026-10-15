@@ -280,6 +280,31 @@ jobs:
             app/Madeira/libwin32u_unix.a
           key: ${{ steps.wine-cache.outputs.cache-primary-key }}
 
+      # 32 位（WoW64）宿主 ntdll 必须和我们的原生层配套：上游那份成品假设
+      # "原生层已经先分配 native TLS"，而 iOS 版 alloc_thread_tls 发生得更晚，
+      # 于是 FEX 的 CPU 后端一初始化就读到 NULL（libwow64fex+0x1b2a88）。
+      # build/wine-wow64/prepare.py 把 Wine 的 init_wow64 改成"先分配 TLS、
+      # 再加载 CPU 后端"，并把 iOS unwind-stall 守卫从 3 步放宽到 4096 步
+      # （32 位 C++ 抛出会在第 4 步自然结束，判早了会把伪进程直接拆掉）。
+      - name: Restore native WoW64 loader build
+        id: wow64-loader-cache
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/wine-wow64/output
+          key: wow64-loader-v2-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ hashFiles('build/wine-wow64/build.sh', 'build/wine-wow64/prepare.py') }}
+
+      - name: Build native WoW64 loader (aarch64-windows/ntdll.dll)
+        if: env.APP_ONLY != '1'
+        run: bash build/wine-wow64/build.sh > >(tee ci-logs/wine-wow64-loader.log) 2>&1
+
+      - name: Save native WoW64 loader build
+        if: success() && env.APP_ONLY != '1' && steps.wow64-loader-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/wine-wow64/output
+          key: ${{ steps.wow64-loader-cache.outputs.cache-primary-key }}
+
       - name: Resolve Rust version
         id: rust-version
         if: ${{ !cancelled() && env.APP_ONLY != '1' && steps.deps.outcome == 'success' }}

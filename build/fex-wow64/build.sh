@@ -7,6 +7,9 @@
 set -eu
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PATH="$R/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin:$PATH"
+# The workflow exports IPHONEOS_DEPLOYMENT_TARGET/SDKROOT for the iOS half; the
+# PE cross build here is a macOS-host build and must not inherit them.
+unset IPHONEOS_DEPLOYMENT_TARGET SDKROOT CC CXX
 B="$R/FEX/build-wow64"
 TOOLCHAIN="$R/toolchains/llvm-mingw-20260421-ucrt-macos-universal"
 # Re-root package discovery inside the MinGW sysroot and turn the three
@@ -29,7 +32,8 @@ if [ ! -f "$B/CMakeCache.txt" ]; then
         -DCMAKE_CXX_FLAGS=-DFEX_IOS_HOST -DCMAKE_ASM_FLAGS=-DFEX_IOS_HOST \
         -DENABLE_LTO=OFF -DENABLE_ASSERTIONS=OFF -DENABLE_JEMALLOC_GLIBC_ALLOC=OFF \
         -DBUILD_TESTING=OFF -DBUILD_FEXCONFIG=OFF -DTUNE_ARCH=generic -DTUNE_CPU=none \
-        -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DCMAKE_SHARED_LINKER_FLAGS="-static -static-libgcc -static-libstdc++ -Wl,--file-alignment=4096,/mllvm:-align-loops=1,-Map,$B/wow64fex.map"
 fi
-cmake --build "$B" --target wow64fex
+cmake --build "$B" --target wow64fex --parallel "${JOBS:-$(sysctl -n hw.ncpu)}"
 cp "$B/Bin/libwow64fex.dll" "$R/app/Madeira/aarch64-windows/xtajit.dll" && ls -l "$R/app/Madeira/aarch64-windows/xtajit.dll"
