@@ -330,6 +330,35 @@ inline bool drop_metadata() { return variant() == 2 || variant() == 3 || variant
  * (StructurePtrOffset) is a separate thing and stays put. */
 inline bool index_from_zero() { return variant() >= 4; }
 
+/* 6: strip every function attribute whose bitcode code is above 68.
+ *
+ * 68 is `noundef`, the last entry in LLVM 11's ATTR_KIND_* table; Apple's
+ * reader -- reading this device's own AIR -- rejects code 70
+ * ("LLVM ERROR: Unknown attribute kind (70)") and that code is `mustprogress`,
+ * which is what LLVM 12, 13 and 15 all call 70.  So the reader is older than
+ * LLVM 12, and every attribute at or below 68 is still safe.
+ *
+ * airconv's own IR needs exactly one of those newer codes: `mustprogress`,
+ * placed by hand in four spots (air_builder.cpp CreateDerivative /
+ * CreateAtomicFence / CreateSetMeshProperties, air_operations.cpp
+ * call_unpack_impl -- that last one is the vertex-attribute path).  Chasing
+ * the four writers one at a time is fragile, so this drops the whole class at
+ * the one place every compilation path passes through: after
+ * runOptimizationPasses() and before the module is serialised.
+ *
+ * The cost is optimisation quality only: these are promises the optimiser may
+ * use, not semantics the hardware needs.
+ *
+ * 7: the same, plus `convergent` (code 43).
+ *
+ * Worth trying because one probe run already showed the shape that ought to be
+ * clean failing anyway: ps_cbuffer's shader_main carries no attribute group at
+ * all, yet its pipeline is refused.  43 is in LLVM 11's table, so this is not
+ * about the reader -- if 43 turns out to matter it is about what Metal does
+ * with the promise, which is a different question. */
+inline bool strip_attributes() { return variant() == 6 || variant() >= 7; }
+inline bool drop_convergent() { return variant() >= 7; }
+
 } // namespace dxmt::airconv_probe
 """
 probe_out = output_root / 'airconv/ios15_probe.hpp'
@@ -414,6 +443,66 @@ variant_files = (
          '          if (!dxmt::airconv_probe::drop_metadata())\n'
          '            encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), min_lod);'),
     ), ('dxmt::airconv_probe::drop_metadata()',)),
+    ('airconv/airconv_context.cpp', (
+        ('#include "airconv_context.hpp"\n',
+         '#include "airconv_context.hpp"\n#include "ios15_probe.hpp"\n'),
+        # Variant 6/7: see strip_attributes() in ios15_probe.hpp.  This is the one
+        # place every compilation path goes through -- dxbc_converter.cpp's five
+        # SM50Compile/SM50CompileGSPassthrough entries all call
+        # runOptimizationPasses() and then hand the module to the metallib writer
+        # -- so the whole class of newer attributes can be dropped here instead of
+        # at each of the four places airconv writes MustProgress by hand.
+        ('  // Optimize the IR!\n'
+         '  MPM.run(M, MAM);\n'
+         '}\n',
+         '  // Optimize the IR!\n'
+         '  MPM.run(M, MAM);\n'
+         '\n'
+         '  /* The attributes the device\'s AIR reader refuses (see ios15_probe.hpp).\n'
+         '   * This is the last pass over the IR: every entry point in\n'
+         '   * dxbc_converter.cpp calls runOptimizationPasses() and then hands the\n'
+         '   * module straight to the metallib writer, and linkShader() (which runs\n'
+         '   * earlier, for MSAD/sample-pos/tessellation) only parses and links\n'
+         '   * prebuilt bitcode, which adds no attributes of its own. */\n'
+         '  if (dxmt::airconv_probe::strip_attributes()) {\n'
+         '    const bool drop_convergent = dxmt::airconv_probe::drop_convergent();\n'
+         '    unsigned dropped = 0;\n'
+         '    /* hasParamAttr/removeParamAttr are shared by Function and CallBase, so\n'
+         '     * one lambda covers both.  The removals are collected per holder and\n'
+         '     * applied after the walk: removing while iterating an AttributeSet is\n'
+         '     * asking for trouble. */\n'
+         '    auto drop = [&](auto &Holder) {\n'
+         '      llvm::SmallVector<unsigned, 8> param_idx, param_kind;\n'
+         '      llvm::SmallVector<llvm::Attribute::AttrKind, 8> fn_attr;\n'
+         '      auto wanted = [&](unsigned code) {\n'
+         '        return code > 68 || (drop_convergent && code == 43);\n'
+         '      };\n'
+         '      for (unsigned i = 0; i < Holder.arg_size(); ++i)\n'
+         '        for (unsigned j = 0; j < llvm::Attribute::EndAttrKinds; ++j)\n'
+         '          if (wanted(j) && Holder.hasParamAttr(i, (llvm::Attribute::AttrKind)j)) {\n'
+         '            param_idx.push_back(i);\n'
+         '            param_kind.push_back(j);\n'
+         '          }\n'
+         '      for (unsigned j = 0; j < llvm::Attribute::EndAttrKinds; ++j)\n'
+         '        if (wanted(j) && Holder.hasFnAttribute((llvm::Attribute::AttrKind)j))\n'
+         '          fn_attr.push_back((llvm::Attribute::AttrKind)j);\n'
+         '      for (size_t k = 0; k < param_idx.size(); ++k) {\n'
+         '        Holder.removeParamAttr(param_idx[k], (llvm::Attribute::AttrKind)param_kind[k]);\n'
+         '        dropped++;\n'
+         '      }\n'
+         '      for (auto kind : fn_attr) { Holder.removeFnAttr(kind); dropped++; }\n'
+         '    };\n'
+         '    for (llvm::Function &F : M) {\n'
+         '      drop(F);\n'
+         '      for (llvm::BasicBlock &BB : F)\n'
+         '        for (llvm::Instruction &I : BB)\n'
+         '          if (auto *CB = llvm::dyn_cast<llvm::CallBase>(&I)) drop(*CB);\n'
+         '    }\n'
+         '    llvm::errs() << "[ios15-probe] stripped " << dropped\n'
+         '                 << " attribute(s) above bitcode code 68\\n";\n'
+         '  }\n'
+         '}\n'),
+    ), ('strip_attributes()',)),
 )
 
 for relative, pairs, markers in variant_files:
