@@ -195,6 +195,17 @@ jobs:
           path: FEX/build-ios
           key: fex-build-ios15.6-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/fex-ios/build.sh') }}
 
+      - name: Restore FEX WoW64 module build
+        id: fex-wow64-cache
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          # 32 位 CPU 后端（libwow64fex.dll → aarch64-windows/xtajit.dll）现在由
+          # build/fex-wow64/build.sh 从 pinned FEX 源码构建，key 里带上 build-all.sh
+          # 的哈希，补丁一改就必然重建。
+          path: FEX/build-wow64
+          key: fex-wow64-ios15.6-${{ runner.arch }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/fex-wow64/build.sh', 'tools/ci/build-all.sh') }}
+
       - name: native（FEXCore）
         id: native
         run: tools/ci/build-all.sh native
@@ -214,6 +225,13 @@ jobs:
         with:
           path: FEX/build-ios
           key: ${{ steps.fex-build-cache.outputs.cache-primary-key }}
+
+      - name: Save FEX WoW64 module build
+        if: success() && env.APP_ONLY != '1' && steps.fex-wow64-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: FEX/build-wow64
+          key: ${{ steps.fex-wow64-cache.outputs.cache-primary-key }}
 
       - name: Check compilation cache changes
         id: ccache-after

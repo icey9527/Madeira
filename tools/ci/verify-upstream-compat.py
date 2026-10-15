@@ -16,6 +16,14 @@ from pathlib import Path
 DIRS = ("i386-windows", "aarch64-windows", "arm64ec-windows", "d3d12")
 MANIFEST = Path(__file__).with_name("upstream-compat.sha256")
 
+# Built by CI from the pinned FEX source instead of being vendored, because the
+# upstream prebuild is the one that NULL-derefs in libwow64fex on iOS 15.6
+# (see tools/ci/build-all.sh and HANDOFF).  These paths are still shipped, so
+# they must exist -- they are just not hash-pinned to upstream any more.
+BUILD_OUTPUTS = frozenset({
+    "app/Madeira/aarch64-windows/xtajit.dll",
+})
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -48,6 +56,11 @@ def main(argv: list[str]) -> int:
         for path in base.rglob("*"):
             if path.is_file():
                 actual[path.as_posix()] = sha256(path)
+
+    for relative in sorted(BUILD_OUTPUTS):
+        if relative not in actual:
+            raise SystemExit(f"missing build output: {relative}")
+        actual.pop(relative)
 
     problems: list[str] = []
     for relative, digest in sorted(expected.items()):
