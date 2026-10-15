@@ -255,6 +255,13 @@ enum MetalSelfTest {
         let marker = docs.appendingPathComponent("metal-selftest.marker")
         guard fm.fileExists(atPath: marker.path) else { return }
 
+        // The probe runs in-process, but madeira.cfg's env.* lines are normally
+        // exported only when Wine starts.  Export this diagnostic switch here,
+        // before the first airconv call, so the on-device variant is real.
+        if let variant = MadeiraConfig.get("env.MADEIRA_AIRCONV_VARIANT"), !variant.isEmpty {
+            variant.withCString { _ = setenv("MADEIRA_AIRCONV_VARIANT", $0, 1) }
+        }
+
         var text = "metal self test \(Date())\n"
         defer {
             try? text.write(to: docs.appendingPathComponent("metal-selftest.txt"), atomically: true, encoding: .utf8)

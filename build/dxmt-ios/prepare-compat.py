@@ -304,11 +304,10 @@ probe_header = """#pragma once
 namespace dxmt::airconv_probe {
 
 inline int variant() {
-  static const int v = [] {
-    const char *s = std::getenv("MADEIRA_AIRCONV_VARIANT");
-    return s ? std::atoi(s) : 0;
-  }();
-  return v;
+  /* Read every time: the Swift self-test exports the value before calling
+   * the in-process probe, and other airconv users may run earlier. */
+  const char *s = std::getenv("MADEIRA_AIRCONV_VARIANT");
+  return s ? std::atoi(s) : 0;
 }
 
 /* 1 / 3: declare air.max_textures as 31 instead of 128. */
