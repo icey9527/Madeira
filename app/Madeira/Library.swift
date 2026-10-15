@@ -4402,8 +4402,17 @@ enum EndedSessionSurface {
     }
 
     @MainActor static func hide(reason: String) {
+        // `wine_process_is_running() == 0` used to be part of this guard, and it
+        // is what left the app stuck: a Dock start leaves the Desktop session
+        // (explorer.exe) running after the game is gone, so the compositor was
+        // never hidden, its view kept covering the library, every tap went to the
+        // frozen desktop and only restarting Madeira brought the library back.
+        // A session that is over is over -- whatever still runs underneath is
+        // hidden here and shown again when the next session begins -- so the
+        // library is always reachable.  (Starting another session still needs the
+        // restart prompt: one Wine session per app run.)
         guard MadeiraConfig.flag("MADEIRA_LIBRARY_HIDE_ENDED_DESKTOP"), LibraryModel.shared.enabled,
-              LibraryModel.shared.current == nil, wine_process_is_running() == 0 else { return }
+              LibraryModel.shared.current == nil else { return }
         guard winios_compositor_set_hidden(1) != 0 else { return }
         hiddenByUs = true
         LogStore.shared.log("[library-surface] hid ended desktop reason=\(reason)")
