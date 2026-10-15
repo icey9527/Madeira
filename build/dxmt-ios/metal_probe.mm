@@ -249,8 +249,11 @@ static const char *kMslFragment =
     "}\n";
 
 /* One row per vertex/fragment combination to try.  Row 0 is the pair the D3D11
- * path uses (airconv's own VS with airconv's own PS), row 1 replaces only the
- * vertex side, and row 2 is the all-MSL control. */
+ * path uses (airconv's own VS with airconv's own PS); rows 1 and 2 replace one
+ * side at a time, and row 3 is the all-MSL control.  Row 2 exists because every
+ * airconv pair failed while MSL-VS + airconv-PS passed for ps_cbuffer: the
+ * airconv vertex module has to be ruled in or out on its own before any
+ * fragment-side theory is worth testing. */
 struct Pair {
     const char *what;
     int vs_msl; /* 1 = use Apple's MSL vertex function */
@@ -259,6 +262,7 @@ struct Pair {
 static const Pair kPairs[] = {
     { "airconv VS + airconv PS",   0, 0 },
     { "MSL VS + airconv PS",       1, 0 },
+    { "airconv VS + MSL PS",       0, 1 },
     { "MSL VS + MSL PS (control)", 1, 1 },
 };
 
