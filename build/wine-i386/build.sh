@@ -39,6 +39,15 @@ LOG="$B/madeira-i386-build.log"
 
 [ -x "$STRIP" ] || { echo "llvm-mingw not found at $TC (docs/BUILDING.md)" >&2; exit 1; }
 
+# The workflow exports IPHONEOS_DEPLOYMENT_TARGET/SDKROOT for the iOS half.
+# This configure/build is a macOS-host build and must not inherit them, or
+# configure picks up the iOS SDK and the i386 modules fail to link.
+unset IPHONEOS_DEPLOYMENT_TARGET
+export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+MAC_TARGET="$(uname -m)-apple-macos$(sw_vers -productVersion)"
+export CC="$(xcrun --sdk macosx -f clang) -target $MAC_TARGET -isysroot $SDKROOT"
+export CXX="$(xcrun --sdk macosx -f clang++) -target $MAC_TARGET -isysroot $SDKROOT"
+
 # ---------------------------------------------------------------- configure
 # Its own tree, like build-arm64ec: reconfiguring build-macos with an extra
 # arch would regenerate every module Makefile the ntdll-unix build relies on.
@@ -46,7 +55,7 @@ if [ ! -f "$B/config.status" ]; then
     mkdir -p "$B"
     # --enable-winegstreamer: the PE half never touches GStreamer, but configure
     # drops the module without GStreamer's development files (docs/MEDIA.md).
-    (cd "$B" && ../configure --enable-archs=i386 --without-x --without-vulkan \
+    (cd "$B" && ../configure --enable-win64 --enable-archs=i386 --without-x --without-vulkan \
                              --without-freetype --without-gnutls --disable-tests \
                              --enable-winegstreamer)
 fi
@@ -174,3 +183,4 @@ for f in "$DEST"/*; do
     done < <("$OBJDUMP" -p "$f" 2>/dev/null | sed -n 's/^ *DLL Name: //p')
 done
 echo "== $(ls "$DEST" | wc -l | tr -d ' ') files in app/Madeira/i386-windows, $missing missing imports =="
+[ "$missing" -eq 0 ] || { echo "i386 import closure incomplete" >&2; exit 1; }

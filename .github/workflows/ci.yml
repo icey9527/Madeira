@@ -394,6 +394,58 @@ jobs:
           path: app/Madeira/libdxmt_combined.a
           key: ${{ steps.dxmt-cache.outputs.cache-primary-key }}
 
+      # 32 位（i386）那一半也从 pinned wine 源码构建：C++ 异常是跨
+      # "i386 DLL ↔ aarch64 宿主 ntdll" 传递的，两半必须同源。混着用的时候
+      # （宿主 ntdll 自编 + i386 用上游成品）32 位抛出会带着一个退化上下文
+      # （pc=0）进宿主 ntdll，处理函数搜索原地打转。
+      - name: Restore 32-bit Windows runtime
+        id: wow64-cache
+        if: success() && env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: app/Madeira/i386-windows
+          key: wine-i386-v2-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ steps.dxmtsha.outputs.sha }}-${{ hashFiles('build/wine-i386/build.sh', 'tools/ci/verify-wow64.py') }}
+
+      - name: Restore incremental 32-bit build
+        id: wow64-build-cache
+        if: success() && env.APP_ONLY != '1' && steps.wow64-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            wine/build-i386
+            dxmt/build-pe-i386
+          key: wine-i386-build-v2-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ steps.dxmtsha.outputs.sha }}-${{ hashFiles('build/wine-i386/build.sh', 'tools/ci/verify-wow64.py') }}
+          restore-keys: wine-i386-build-v2-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ steps.dxmtsha.outputs.sha }}-
+
+      - name: Build 32-bit Windows runtime (Wine i386 + DXMT i386)
+        id: wow64
+        if: success() && env.APP_ONLY != '1' && steps.wow64-cache.outputs.cache-hit != 'true'
+        run: |
+          export PATH="$(brew --prefix)/opt/bison/bin:$(brew --prefix)/opt/flex/bin:$PATH"
+          brew install meson ninja
+          bash build/wine-i386/build.sh > >(tee ci-logs/wine-i386.log) 2>&1
+          python3 tools/ci/verify-wow64.py app/Madeira
+
+      - name: Save incremental 32-bit build after failure
+        if: ${{ !cancelled() && steps.wow64.outcome == 'failure' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            wine/build-i386
+            dxmt/build-pe-i386
+          key: ${{ steps.wow64-build-cache.outputs.cache-primary-key }}
+
+      - name: Save completed 32-bit Windows runtime
+        if: success() && env.APP_ONLY != '1' && steps.wow64-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: app/Madeira/i386-windows
+          key: ${{ steps.wow64-cache.outputs.cache-primary-key }}
+
+      - name: Verify 32-bit Windows runtime
+        if: success() && env.APP_ONLY != '1'
+        run: python3 tools/ci/verify-wow64.py app/Madeira
+
       # The app cache hands back a linked Madeira.debug.dylib, and restoring it
       # when the archives it was linked from have changed is how a fixed build
       # ships an old binary (that happened: the guard for MTLCopyAllDevices was

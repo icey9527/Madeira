@@ -29,6 +29,13 @@ BUILD_OUTPUTS = frozenset({
     "app/Madeira/aarch64-windows/ntdll.dll",
 })
 
+# Directories CI builds from source: the 32-bit farm (Wine's i386 modules plus
+# DXMT's i386 d3d11/dxgi/d3d10core/winemetal/d3d9).  It has to come from the
+# same wine pin as the aarch64 loader/backend that dispatches its exceptions --
+# mixing a rebuilt host ntdll with vendored i386 modules is what left the
+# 32-bit C++ throw with a degenerate context (pc=0).  Still required to exist.
+BUILD_OUTPUT_DIRS = ("app/Madeira/i386-windows",)
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -60,12 +67,21 @@ def main(argv: list[str]) -> int:
             raise SystemExit(f"missing compatibility directory: {base}")
         for path in base.rglob("*"):
             if path.is_file():
-                actual[path.as_posix()] = sha256(path)
+                key = path.as_posix()
+                if any(key.startswith(d + "/") for d in BUILD_OUTPUT_DIRS):
+                    continue
+                actual[key] = sha256(path)
 
     for relative in sorted(BUILD_OUTPUTS):
         if relative not in actual:
             raise SystemExit(f"missing build output: {relative}")
         actual.pop(relative)
+
+    for directory in BUILD_OUTPUT_DIRS:
+        built = bundle / Path(directory).relative_to("app/Madeira")
+        count = sum(1 for f in built.glob("*") if f.is_file()) if built.is_dir() else 0
+        if count == 0:
+            raise SystemExit(f"missing build output directory or it is empty: {directory}")
 
     problems: list[str] = []
     for relative, digest in sorted(expected.items()):
