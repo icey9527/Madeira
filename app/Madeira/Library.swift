@@ -1158,6 +1158,18 @@ final class LibraryModel: ObservableObject {
         ProMotionIntent.shared.setActive(false)
         fputs("[frontend] returned to library\n", stderr)
     }
+
+    /// A Dock start's host ended before any game window appeared: end the session
+    /// here.  `poll()` normally ends a session only once the Wine process *and*
+    /// the wineserver are gone, but a Dock start leaves a Desktop session running
+    /// (`explorer.exe`), so that condition never becomes true: `current` stayed
+    /// set, the library stayed locked behind a session that was already over, and
+    /// tapping an entry did nothing at all until Madeira was restarted.
+    func abortSession(_ reason: String) {
+        guard current != nil else { return }
+        finish()
+        error = reason
+    }
 }
 
 enum LibraryError: LocalizedError {

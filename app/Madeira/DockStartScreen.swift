@@ -318,7 +318,14 @@ final class DockStartScreen: ObservableObject {
                 if let words = DockStartStatus.failure(result: current.result, words: current.failure, launching: model.launching) {
                     failure = words
                     LogStore.shared.log("[dock-status] host-ended result=\(current.result ?? 0) starting=\(model.launching ? 1 : 0)", level: .error)
-                    MainActor.assumeIsolated { MadeiraDock.cleanup() }
+                    MainActor.assumeIsolated {
+                        MadeiraDock.cleanup()
+                        // Still in the launch phase: no game window ever appeared, and
+                        // the Desktop session keeps the Wine process alive, so the
+                        // normal end-of-session path would never run.  End it now or
+                        // the library stays locked behind a dead session.
+                        if model.launching { model.abortSession(words) }
+                    }
                 }
             }
         }
