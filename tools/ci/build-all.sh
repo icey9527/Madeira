@@ -626,6 +626,73 @@ else:
     s = s.replace(old, new, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
     print('[patch] applied: drop stale JITPOOL_RIP, add callret-dup probe')
+# MADEIRA: arm64x_check_call (__os_arm64x_check_icall) bounds-checks the target
+# ABOVE the EcCodeBitMap's coverage (ml975: >= 2^39 -> .Lexit) but not BELOW the
+# iOS user-space floor, and ml975's own comment records that gap:
+#   "a NULL or small-but-invalid target still reaches `ldr x16,[x11]` below and
+#    faults there, which is what Windows would also do."
+#
+# iOS 15.6 makes that gap fatal.  The observed target is exactly 0x100000000 --
+# the iOS user-space floor, which this port already uses as "below this nothing
+# is mapped" in build/ntdll-unix/signal_arm64_ios.c (bus_pc_ok, ml982).  It is
+# far below the 2^39 ceiling, so the ml975 guard passes it, the bitmap reads
+# "not EC code", and the FFS sniff dereferences it inside ntdll:
+#   [first-fault] pc=<ntdll pool>+0x5623c addr=0x100000000 x11=0x100000000
+#   lr PE: libarm64ecfex.dll+0x1412c
+# -> guest c0000005, and the process dies with an exception the guest cannot
+# handle, because it is raised from inside ntdll's classifier.
+#
+# Reject at or below the floor and take .Lexit, the "not EC code, use the x64
+# exit thunk" answer -- the same reasoning and the same exit as ml975, and the
+# only exit that does not dereference x11.  A target that is genuinely mapped
+# code at or below the floor has never existed on iOS (the app's own region
+# starts at [device] address-map=0x10216c000 and above), so this cannot reject
+# real code; if it ever did, .Lexit still runs it correctly through the thunk.
+#
+# The count and the last target/caller are kept in a small array so the next
+# report can say whether this fires once or in a loop, and who supplied it.
+p = 'wine/dlls/ntdll/signal_arm64ec.c'
+s = io.open(p, encoding='utf-8').read()
+if 'madeira_ec_floor_log' in s:
+    print('[patch] already applied: arm64x_check_call iOS floor guard')
+else:
+    # 1) the storage
+    anchor = ("static void __attribute__((naked)) arm64x_check_call(void)\n{\n")
+    if anchor not in s:
+        raise SystemExit('[patch] arm64x_check_call definition not found')
+    s = s.replace(
+        anchor,
+        "/* MADEIRA: [0]=times the iOS-floor guard rejected a target,\n"
+        " * [1]=the last rejected target, [2]=the caller that supplied it. */\n"
+        "UINT64 madeira_ec_floor_log[3] __attribute__((used));\n"
+        "\n"
+        + anchor, 1)
+
+    # 2) the guard itself
+    old = ('         "lsr x16, x11, #39\\n\\t"            /* ml975: beyond 39-bit VA / map coverage? */\n'
+           '         "cbnz x16, .Lexit\\n\\t"             /*        -> not EC code, exit thunk */\n'
+           '         "ldr x16, [x18, #0x60]\\n\\t"        /* peb -- see above, intentionally x18 */\n')
+    if old not in s:
+        raise SystemExit('[patch] ml975 guard text not found -- wine signal_arm64ec.c changed?')
+    new = ('         "lsr x16, x11, #39\\n\\t"            /* ml975: beyond 39-bit VA / map coverage? */\n'
+           '         "cbnz x16, .Lexit\\n\\t"             /*        -> not EC code, exit thunk */\n'
+           '         /* MADEIRA: also reject at or below the iOS user-space floor. */\n'
+           '         "movz x16, #0x1, lsl #32\\n\\t"       /* x16 = 0x100000000 */\n'
+           '         "cmp x11, x16\\n\\t"\n'
+           '         "b.hi .Labove_floor\\n\\t"\n'
+           '         "adrp x16, madeira_ec_floor_log\\n\\t"\n'
+           '         "add x16, x16, #:lo12:madeira_ec_floor_log\\n\\t"\n'
+           '         "ldr x17, [x16]\\n\\t"\n'
+           '         "add x17, x17, #1\\n\\t"\n'
+           '         "str x17, [x16]\\n\\t"\n'
+           '         "str x11, [x16, #8]\\n\\t"\n'
+           '         "str x30, [x16, #16]\\n\\t"\n'
+           '         "b .Lexit\\n\\t"\n'
+           '         ".Labove_floor:\\n\\t"\n'
+           '         "ldr x16, [x18, #0x60]\\n\\t"        /* peb -- see above, intentionally x18 */\n')
+    s = s.replace(old, new, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: arm64x_check_call iOS floor guard')
 PYEOF
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
@@ -701,6 +768,14 @@ stage_wine() {
       wine_host_command ../configure --enable-archs=arm64ec --without-x --disable-tests --enable-winegstreamer)
   fi
   wine_host_command make -C wine/build-arm64ec -j "$NPROC" include/all
+
+  # 64 位 PE 边的 ntdll。和 aarch64-windows/ntdll.dll、xtajit.dll、xtajit64.dll 同一个
+  # 道理：仓库里 vendored 且被哈希钉死的那份已经遮不住 iOS 15.6。这次要补的是
+  # arm64x_check_call 的下界 —— ml975 只挡了上界（x11 >= 2^39），而摆在眼前的坏目标
+  # 是 0x100000000（= iOS 用户空间地板），它小于 2^39 所以大摇大摆通过检查，然后被
+  # 当指针解引用（ntdll 池副本 RVA 0x5623c，调用者 libarm64ecfex.dll+0x1412c）。
+  step "wine PE ntdll（arm64ec-windows/ntdll.dll，含 arm64x_check_call 地板护栏）"
+  bash build/wine-pe/build-ntdll.sh
   hdrs_x="$(find wine/build-arm64ec/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-arm64ec 生成头文件数: $hdrs_x"
   for header in dwrite dwrite_3 objidlbase objidl; do
