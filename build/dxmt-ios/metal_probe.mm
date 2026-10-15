@@ -9,12 +9,14 @@
  * newRenderPipelineStateWithDescriptor, which is where the D3D11 path dies,
  * with no Wine and no D3D11 in this loop.
  *
- * Each fragment fixture is then run through four pipelines rather than one: the
- * pair airconv itself produces, and three that swap one side for a hand-written
- * MSL function (or leave the vertex side empty).  One probe run already showed
- * the pair failing even for a fragment module that carries no function
- * attributes at all, so "which side is refused" has to be answered before any
- * theory about the bitcode's attributes can be tested. */
+ * Each fragment fixture is then run through three pipelines rather than one:
+ * the pair airconv itself produces, one that swaps the vertex side for a
+ * hand-written MSL function, and one all-MSL control.  A render pipeline
+ * requires a vertex function, so "fragment alone with no VS" is not a valid
+ * Metal descriptor and cannot answer that question.  One probe run already
+ * showed the airconv pair failing even for a fragment module that carries no
+ * function attributes at all, so "which side is refused" has to be answered
+ * before any theory about the bitcode's attributes can be tested. */
 #import <Metal/Metal.h>
 #import <dispatch/dispatch.h>
 
@@ -120,10 +122,8 @@ static std::string error_text(NSError *error) {
 }
 
 /* 0 = pipeline created, else the failing step's text.  A side may be a metallib
- * airconv produced (as bytes) or a function Apple compiled from MSL; pass
- * nothing for the vertex side to leave desc.vertexFunction unset, which
- * separates "the compiler will not build this fragment function at all" from
- * "this vertex/fragment pair does not link". */
+ * airconv produced (as bytes) or a function Apple compiled from MSL.  A render
+ * pipeline requires both sides, so every row supplies both. */
 static int metal_pipeline(const std::vector<char> *vs_metallib, id<MTLFunction> vs_fn_in,
                           const std::vector<char> *ps_metallib, id<MTLFunction> ps_fn_in,
                           id<MTLDevice> device, std::string &note) {
@@ -182,8 +182,6 @@ static int metal_pipeline(const std::vector<char> *vs_metallib, id<MTLFunction> 
     if (ps_lib) { [ps_fn release]; [ps_lib release]; dispatch_release(ps_data); }
     return pso ? 0 : -6;
 }
-
-} // namespace
 
 std::string airconv_fixture(const std::string &dir, const std::string &name, int mode,
                             std::vector<char> &metallib) {
@@ -251,19 +249,17 @@ static const char *kMslFragment =
     "}\n";
 
 /* One row per vertex/fragment combination to try.  Row 0 is the pair the D3D11
- * path uses (airconv's own VS with airconv's own PS); the others swap one side
- * for a hand-written MSL function, and row 2 leaves the vertex side empty. */
+ * path uses (airconv's own VS with airconv's own PS), row 1 replaces only the
+ * vertex side, and row 2 is the all-MSL control. */
 struct Pair {
     const char *what;
     int vs_msl; /* 1 = use Apple's MSL vertex function */
     int ps_msl; /* 1 = use Apple's MSL fragment function */
-    bool needs_vs;
 };
 static const Pair kPairs[] = {
-    { "airconv VS + airconv PS",   0, 0, true  },
-    { "MSL VS + airconv PS",       1, 0, true  },
-    { "airconv PS alone (no VS)",  0, 0, false },
-    { "MSL VS + MSL PS (control)", 1, 1, true  },
+    { "airconv VS + airconv PS",   0, 0 },
+    { "MSL VS + airconv PS",       1, 0 },
+    { "MSL VS + MSL PS (control)", 1, 1 },
 };
 
 /* One .metallib built by Apple's own frontend, from the source above.  Returns
@@ -280,38 +276,6 @@ static id<MTLFunction> msl_function(id<MTLDevice> device, const char *source, co
     if (!fn) why = std::string(what) + ": shader_main missing";
     [lib release];
     return fn;
-}
-
-/* Vertex side optional: with nothing on it, desc.vertexFunction stays unset,
- * which is how "does this fragment function compile at all, or does it only
- * fail once there is a vertex stage to link against" gets answered. */
-static int metal_pipeline_nil_vs(const std::vector<char> &ps_metallib, id<MTLDevice> device,
-                                 std::string &note) {
-    dispatch_data_t ps_data = dispatch_data_create(ps_metallib.data(), ps_metallib.size(),
-                                                   nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
-    NSError *error = nil;
-    id<MTLLibrary> ps_lib = [device newLibraryWithData:ps_data error:&error];
-    if (!ps_lib) {
-        note = std::string("PS newLibraryWithData: ") + error_text(error);
-        dispatch_release(ps_data);
-        return -1;
-    }
-    id<MTLFunction> ps_fn = [ps_lib newFunctionWithName:@"shader_main"];
-    if (!ps_fn) {
-        note = "shader_main missing from the PS metallib";
-        [ps_lib release]; dispatch_release(ps_data);
-        return -2;
-    }
-    MTLRenderPipelineDescriptor *desc = [[MTLRenderPipelineDescriptor alloc] init];
-    desc.fragmentFunction = ps_fn;
-    desc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-    id<MTLRenderPipelineState> pso =
-        [device newRenderPipelineStateWithDescriptor:desc error:&error];
-    if (!pso) note = std::string("newRenderPipelineState (no VS): ") + error_text(error);
-    else { note = "pipeline OK"; [pso release]; }
-    [desc release];
-    [ps_fn release]; [ps_lib release]; dispatch_release(ps_data);
-    return pso ? 0 : -3;
 }
 
 } // namespace
@@ -384,12 +348,9 @@ extern "C" int madeira_metal_probe_run(const char *dir, const char *mode_text,
 
         /* Swapping one side at a time is the whole point: airconv's VS paired
          * with airconv's PS is what the D3D11 path does, and if that fails
-         * while each side paired with Apple's own MSL succeeds, the fault is
+         * while airconv's PS paired with Apple's MSL VS succeeds, the fault is
          * in how the two airconv modules refer to each other -- not in either
-         * module on its own, and not in the attributes the bitcode carries.
-         *
-         * Row 3 sets no vertex function at all: if that succeeds, the fragment
-         * function compiles fine on its own and only the pairing is refused. */
+         * module on its own, and not in the attributes the bitcode carries. */
         for (size_t k = 0; k < sizeof(kPairs) / sizeof(kPairs[0]); ++k) {
             const Pair &p = kPairs[k];
             const char *what = p.what;
@@ -398,12 +359,9 @@ extern "C" int madeira_metal_probe_run(const char *dir, const char *mode_text,
             int rc;
             if (p.vs_msl && !msl_vs) { rc = -98; note = msl_vs_why; }
             else if (p.ps_msl && !msl_ps) { rc = -98; note = msl_ps_why; }
-            else if (!p.needs_vs) {
-                /* Nothing on the vertex side: desc.vertexFunction stays unset. */
-                rc = metal_pipeline_nil_vs(ps_metallib, device, note);
-            } else {
+            else {
                 /* A row either brings its own MSL vertex function or uses the
-                 * module airconv produced for this very fragment. */
+                 * module airconv produced for this fragment. */
                 const std::vector<char> *vs_mb = p.vs_msl ? nullptr : &vs_metallib;
                 if (vs_mb && !have_vs) {
                     rc = -97;
