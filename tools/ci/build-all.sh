@@ -313,6 +313,73 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
+  step "FEX iOS 行为补丁：32 位 RaiseException 用客户机上下文抛出（CI 侧）"
+  # 32 位游戏抛 C++ 异常（MinGW 的 0x20474343）会走到 FEX 的 WinAPI shim：上游那里是
+  # 裸 UNIMPLEMENTED()（实测退出码 0xFE63002C）；改成在宿主栈上调 RtlRaiseException
+  # 也不行 —— Windows 会抓当前（宿主）上下文，客户机侧拿到退化上下文（pc=0），
+  # 处理函数搜索要么被守卫掐断要么无限打转（两种都实测过）。
+  # 上游 FEX 在 WOW64 模块里抛客户机异常用的是
+  #   NtRaiseException(record, TLS.EntryContext(), TRUE)
+  # 即"客户机进入 CPU 后端时保存的上下文"。这里照做：在 WOW64/Module.cpp 加一个
+  # 同 DLL 内的辅助函数（能拿到 GetTLS() 与 UnlockJITContext），让 WinAPI shim 调它。
+  python3 - <<'PYEOF'
+import io
+
+p = 'FEX/Source/Windows/WOW64/Module.cpp'
+s = io.open(p, encoding='utf-8').read()
+anchor = '} // namespace Context\n'
+if 'MadeiraWow64RaiseGuestException' not in s:
+    if s.count(anchor) != 1:
+        raise SystemExit('[patch] Context namespace close not unique: %d' % s.count(anchor))
+    helper = (anchor +
+        '\n'
+        '/* MADEIRA: raise a guest exception from the CPU backend with the context the\n'
+        ' * guest had when it entered the backend.  Raising from this host frame\n'
+        ' * (RtlRaiseException) gave the 32-bit C++ throw a degenerate context (pc=0),\n'
+        ' * so the handler search never made progress.  This is the call shape the\n'
+        ' * upstream WOW64 module uses for guest exceptions. */\n'
+        'extern "C" NTSTATUS WINAPI NtRaiseException(EXCEPTION_RECORD *, CONTEXT *, BOOL);\n'
+        'extern "C" void MadeiraWow64RaiseGuestException(EXCEPTION_RECORD *Rec) {\n'
+        '  const auto Tls = GetTLS();\n'
+        '  Context::UnlockJITContext(Tls);\n'
+        '  NtRaiseException(Rec, Tls.EntryContext(), TRUE);\n'
+        '}\n')
+    s = s.replace(anchor, helper, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: WOW64 guest-context raise helper')
+else:
+    print('[patch] already applied: WOW64 guest-context raise helper')
+
+p = 'FEX/Source/Windows/Common/WinAPI/Misc.cpp'
+s = io.open(p, encoding='utf-8').read()
+old = ('DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags, '
+       'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
+       '  UNIMPLEMENTED();\n'
+       '}')
+new = ('extern "C" void MadeiraWow64RaiseGuestException(EXCEPTION_RECORD *ExceptionRecord);\n\n'
+       'DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags, '
+       'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
+       '  /* MADEIRA: patched by tools/ci/build-all.sh.  Upstream is UNIMPLEMENTED() here,\n'
+       '   * which turns every 32-bit C++ throw into exit code 0xFE63002C.  Build the\n'
+       '   * record Windows would and raise it on the guest\'s behalf. */\n'
+       '  EXCEPTION_RECORD Rec {};\n'
+       '  Rec.ExceptionCode = dwExceptionCode;\n'
+       '  Rec.ExceptionFlags = dwExceptionFlags;\n'
+       '  Rec.NumberParameters = nNumberOfArguments;\n'
+       '  for (DWORD i = 0; i < nNumberOfArguments && i < EXCEPTION_MAXIMUM_PARAMETERS; ++i)\n'
+       '    Rec.ExceptionInformation[i] = lpArguments ? lpArguments[i] : 0;\n'
+       '  MadeiraWow64RaiseGuestException(&Rec);\n'
+       '  NtTerminateProcess(NtCurrentProcess(), dwExceptionCode);\n'
+       '}')
+if old in s:
+    s = s.replace(old, new, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: WinAPI RaiseException -> guest-context raise')
+elif 'MadeiraWow64RaiseGuestException' in s:
+    print('[patch] already applied: WinAPI RaiseException')
+else:
+    raise SystemExit('[patch] RaiseException pattern not found')
+PYEOF
 
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
