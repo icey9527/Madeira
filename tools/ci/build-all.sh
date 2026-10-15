@@ -517,6 +517,115 @@ if '__CTOR_LIST__' not in s:
     print('[patch] applied: run the pool copy GNU ctors in InitCRTProcess')
 else:
     print('[patch] already applied: run the pool copy GNU ctors in InitCRTProcess')
+# MADEIRA: the [JITPOOL_RIP] detector that used to sit at the end of CompileBlock
+# tested a hardcoded window [0x11c000000,0x12e000000) as "the JIT pool".  On
+# iOS 15.6 the pool is the TrollStore RX mapping at 0x2a0000000 (896 MB); that
+# window is just where Wine loads 64-bit PE images, so every hit was
+# dockhost.exe's OWN code -- its TLS callback at base+0x5d10, i.e. 0x127625d10
+# on the ml908 module and 0x12b975d10 on the rebuilt one, each matching that
+# run's dockhost.exe ImageBase (0x127620000 / 0x12b970000).  It ran AFTER the
+# ml315 alias-table redirect above, so any real module pool-copy RIP was already
+# redirected before it could fire, and ml300 in this file had already retracted
+# the pool-INTERVAL approach as unsound (ARM64EC type-2 X64 ranges inside the
+# pool are correctly compiled as x86).  Genuine host-PC leaks are caught by the
+# ml197/ml296 gate (>= 0x7400000000 || IsAddressInCodeBuffer) and by
+# ntdll-unix's [rip-leak] probe.  Drop the stale detector and spend the space on
+# the question the device log actually raised.
+p = 'FEX/FEXCore/Source/Interface/Core/Core.cpp'
+s = io.open(p, encoding='utf-8').read()
+if '[callret-dup #{}]' in s:
+    print('[patch] already applied: drop stale JITPOOL_RIP, add callret-dup probe')
+else:
+    old = '''  {
+    /* JIT pool observed at RX=0x11cc00000+0x10000000 across runs. Tighten
+     * the detector to the actual pool range so we don't false-positive on
+     * other 0x1XXXXXXXX guest addresses. ASLR jitter is ~16MB so widen by
+     * 32MB on each side. */
+    constexpr uint64_t pool_lo = 0x11c000000ULL;
+    constexpr uint64_t pool_hi = 0x12e000000ULL;
+    if (GuestRIP >= pool_lo && GuestRIP < pool_hi) {
+      uint64_t crsp = Frame ? Frame->State.callret_sp : 0;
+      static volatile uint32_t jit_rip_dump_count = 0;
+      uint32_t dn = __sync_add_and_fetch(&jit_rip_dump_count, 1);
+      if (dn <= 8) {
+        LogMan::Msg::EFmt("[JITPOOL_RIP #{}] GuestRIP=0x{:x} (HOST PC LEAKED INTO STATE.RIP)  "
+                          "State.rip=0x{:x} callret_sp=0x{:x} Frame=0x{:x}  "
+                          "pool=0x{:x}..0x{:x}",
+                          dn, GuestRIP,
+                          Frame ? Frame->State.rip : 0, crsp,
+                          reinterpret_cast<uintptr_t>(Frame),
+                          pool_lo, pool_hi);
+        if (crsp != 0 && crsp >= 0x10000) {
+          for (int i = 0; i < 8; i++) {
+            uint64_t *pair = reinterpret_cast<uint64_t*>(crsp + i * 0x10);
+            LogMan::Msg::EFmt("[JITPOOL_RIP #{}]   callret[+0x{:x}] = {{pc=0x{:x}, ret=0x{:x}}}",
+                              dn, i * 0x10, pair[0], pair[1]);
+          }
+        }
+      }
+      /* Log-only \u2014 no state mutation. Fall through to normal compile path.
+       * If FEX subsequently faults trying to decode the JIT pool bytes as
+       * x86, we'll see that in the Mach handler \u2014 at least we know the
+       * exact RIP that leaked. */
+    }
+  }
+'''
+    new = '''#if defined(FEX_IOS_HOST)
+  /* MADEIRA callret duplicate-run probe.  The device log showed the top eight
+   * callret entries holding the SAME {guest_ret, host_ret} pair with 16701
+   * entries in use.  Is that a loop legitimately re-pushing the same call, or a
+   * push that never pops?  Count the longest run of identical consecutive pairs
+   * and report it with the stack depth so the next log answers that instead of
+   * us guessing.  Bounds-checked and read-only, and the scan is rate-limited
+   * (1 in 4096 CompileBlock calls) so the hot path does not pay for it.
+   *
+   * Replaces the stale [JITPOOL_RIP] detector: see the patch comment in
+   * tools/ci/build-all.sh for why its hardcoded window was pure false
+   * positives, and why ml315 (above) plus ml197/ml296 already cover the real
+   * cases. */
+  if (Frame) {
+    static volatile uint32_t dup_probe_tick = 0;
+    const uint32_t Tick = __sync_add_and_fetch(&dup_probe_tick, 1);
+    if ((Tick & 0xFFF) == 0) {
+      const uint64_t CRBase = Frame->State.callret_sp_base;
+      const uint64_t CRSp = Frame->State.callret_sp;
+      const uint64_t CREnd = CRBase + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE;
+      if (CRBase && CRSp >= CRBase && CRSp + 0x10 <= CREnd) {
+        const uint64_t Pc0 = *reinterpret_cast<const uint64_t*>(CRSp);
+        const uint64_t Host0 = *reinterpret_cast<const uint64_t*>(CRSp + 8);
+        uint32_t Run = 0;
+        for (uint32_t i = 1; i < 64; ++i) {
+          const uint64_t Slot = CRSp + (uint64_t)i * 0x10;
+          if (Slot + 0x10 > CREnd) {
+            break;
+          }
+          if (*reinterpret_cast<const uint64_t*>(Slot) != Pc0 ||
+              *reinterpret_cast<const uint64_t*>(Slot + 8) != Host0) {
+            break;
+          }
+          Run = i;
+        }
+        if (Run + 1 >= 4) {
+          static volatile uint32_t dup_dump_count = 0;
+          const uint32_t DupN = __sync_add_and_fetch(&dup_dump_count, 1);
+          if (DupN <= 16) {
+            LogMan::Msg::EFmt("[callret-dup #{}] run={} pc=0x{:x} ret=0x{:x}  sp=0x{:x} "
+                              "base=0x{:x} depth=0x{:x}  GuestRIP=0x{:x}",
+                              DupN, Run + 1, Pc0, Host0, CRSp, CRBase,
+                              (CRBase + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE / 4) - CRSp,
+                              GuestRIP);
+          }
+        }
+      }
+    }
+  }
+#endif
+'''
+    if old not in s:
+        raise SystemExit('[patch] stale JITPOOL_RIP detector pattern not found -- FEX Core.cpp changed?')
+    s = s.replace(old, new, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: drop stale JITPOOL_RIP, add callret-dup probe')
 PYEOF
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
