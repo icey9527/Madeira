@@ -313,42 +313,83 @@ for old, new in edits:
 io.open(p, 'w', encoding='utf-8').write(s)
 PYEOF
 
-  step "FEX iOS 行为补丁：32 位 RaiseException 用客户机上下文抛出（CI 侧）"
-  # 32 位游戏抛 C++ 异常（MinGW 的 0x20474343）会走到 FEX 的 WinAPI shim：上游那里是
-  # 裸 UNIMPLEMENTED()（实测退出码 0xFE63002C）；改成在宿主栈上调 RtlRaiseException
-  # 也不行 —— Windows 会抓当前（宿主）上下文，客户机侧拿到退化上下文（pc=0），
-  # 处理函数搜索要么被守卫掐断要么无限打转（两种都实测过）。
-  # 上游 FEX 在 WOW64 模块里抛客户机异常用的是
-  #   NtRaiseException(record, TLS.EntryContext(), TRUE)
-  # 即"客户机进入 CPU 后端时保存的上下文"。这里照做：在 WOW64/Module.cpp 加一个
-  # 同 DLL 内的辅助函数（能拿到 GetTLS() 与 UnlockJITContext），让 WinAPI shim 调它。
+  step "FEX iOS 行为补丁：32 位 RaiseException 定位日志（CI 侧，不改行为）"
+  # 上游的 RaiseException shim 是裸 UNIMPLEMENTED()，实测 32 位 C++ 抛异常时
+  # 退出码 0xFE63002C，正对应 Misc.cpp 第 44 行。该 shim 不在导出表，源码里也没
+  # 有调用点，所以先只记录宿主返回地址和客户机 RIP，再保持 UNIMPLEMENTED() 原样；
+  # 这样下一轮可以按 host_lr 的落点判断是谁按地址调用的它，而不是继续猜。
+  #
+  # 注意：UNIMPLEMENTED() 把 __LINE__ 编进退出码。诊断调用必须挤在同一物理行，
+  # 让宏仍然位于 Misc.cpp:44，退出码保持 0xFE63002C 以便设备侧做 A/B 比对。
   python3 - <<'PYEOF'
 import io
 
 p = 'FEX/Source/Windows/WOW64/Module.cpp'
 s = io.open(p, encoding='utf-8').read()
 anchor = '} // namespace Context\n'
-if 'MadeiraWow64RaiseGuestException' not in s:
+if 'MadeiraWow64RaiseDiagnostic' not in s:
     if s.count(anchor) != 1:
         raise SystemExit('[patch] Context namespace close not unique: %d' % s.count(anchor))
     helper = (anchor +
         '\n'
-        '/* MADEIRA: raise a guest exception from the CPU backend with the context the\n'
-        ' * guest had when it entered the backend.  Raising from this host frame\n'
-        ' * (RtlRaiseException) gave the 32-bit C++ throw a degenerate context (pc=0),\n'
-        ' * so the handler search never made progress.  This is the call shape the\n'
-        ' * upstream WOW64 module uses for guest exceptions. */\n'
-        'extern "C" NTSTATUS WINAPI NtRaiseException(EXCEPTION_RECORD *, CONTEXT *, BOOL);\n'
-        'extern "C" void MadeiraWow64RaiseGuestException(EXCEPTION_RECORD *Rec) {\n'
+        '/* MADEIRA: read the guest RIP for the RaiseException diagnostic.  Prefer the\n'
+        ' * live CPU state; before thread init, fall back to the entry context.  Return\n'
+        ' * false for every unavailable/invalid-looking source so the caller logs \'-\'\n'
+        ' * rather than provoking another fault while reporting the first one. */\n'
+        '#ifdef FEX_IOS_HOST\n'
+        'static bool MadeiraWow64GetGuestRip(uint64_t *Rip) {\n'
+        '  if (!Rip) {\n'
+        '    return false;\n'
+        '  }\n'
         '  const auto Tls = GetTLS();\n'
-        '  Context::UnlockJITContext(Tls);\n'
-        '  NtRaiseException(Rec, Tls.EntryContext(), TRUE);\n'
+        '  const auto TebAddress = reinterpret_cast<uintptr_t>(Tls.TEB);\n'
+        '  if (TebAddress < 0x10000 || (TebAddress & 0x7)) {\n'
+        '    return false;\n'
+        '  }\n'
+        '  if (auto *Thread = Tls.ThreadStateIfInitialised()) {\n'
+        '    if (Thread->CurrentFrame) {\n'
+        '      *Rip = Thread->CurrentFrame->State.rip;\n'
+        '      return true;\n'
+        '    }\n'
+        '  }\n'
+        '  if (auto *EntryContext = Tls.EntryContext()) {\n'
+        '    const auto EntryAddress = reinterpret_cast<uintptr_t>(EntryContext);\n'
+        '    if (EntryAddress >= 0x10000 && !(EntryAddress & 0x7)) {\n'
+        '      *Rip = EntryContext->Pc;\n'
+        '      return true;\n'
+        '    }\n'
+        '  }\n'
+        '  return false;\n'
+        '}\n'
+        '#endif\n'
+        '\n'
+        '/* MADEIRA: this is deliberately a diagnostic, not a replacement raise path.\n'
+        ' * The shim\'s UNIMPLEMENTED() below still terminates with the upstream code. */\n'
+        'extern "C" void MadeiraWow64RaiseDiagnostic(uintptr_t HostLr, uintptr_t Self, DWORD Code, DWORD Flags,\n'
+        '                                            DWORD NArgs, const ULONG_PTR *Args) {\n'
+        '#ifdef FEX_IOS_HOST\n'
+        '  uint64_t GuestRip {};\n'
+        '  if (MadeiraWow64GetGuestRip(&GuestRip)) {\n'
+        '    LogMan::Msg::EFmt("[mad-raise] host_lr={:#x} self={:#x} guest_rip={:#x} code={:#x} flags={:#x} nargs={} args={:#x}",\n'
+        '                      HostLr, Self, GuestRip, Code, Flags, NArgs, reinterpret_cast<uintptr_t>(Args));\n'
+        '  } else {\n'
+        '    LogMan::Msg::EFmt("[mad-raise] host_lr={:#x} self={:#x} guest_rip=- code={:#x} flags={:#x} nargs={} args={:#x}",\n'
+        '                      HostLr, Self, Code, Flags, NArgs, reinterpret_cast<uintptr_t>(Args));\n'
+        '  }\n'
+        '#else\n'
+        '  (void)HostLr;\n'
+        '  (void)Self;\n'
+        '  (void)Code;\n'
+        '  (void)Flags;\n'
+        '  (void)NArgs;\n'
+        '  (void)Args;\n'
+        '#endif\n'
         '}\n')
     s = s.replace(anchor, helper, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
-    print('[patch] applied: WOW64 guest-context raise helper')
+    print('[patch] applied: WOW64 RaiseException diagnostic helper')
 else:
-    print('[patch] already applied: WOW64 guest-context raise helper')
+    print('[patch] already applied: WOW64 RaiseException diagnostic helper')
 
 p = 'FEX/Source/Windows/Common/WinAPI/Misc.cpp'
 s = io.open(p, encoding='utf-8').read()
@@ -356,29 +397,27 @@ old = ('DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExc
        'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
        '  UNIMPLEMENTED();\n'
        '}')
-new = ('extern "C" void MadeiraWow64RaiseGuestException(EXCEPTION_RECORD *ExceptionRecord);\n\n'
+# Keep the macro invocation physically on line 44, matching upstream, so the
+# encoded exit status remains 0xFE63002C.
+new = ('extern "C" void MadeiraWow64RaiseDiagnostic(uintptr_t, uintptr_t, DWORD, DWORD, DWORD, const ULONG_PTR *); '
        'DLLEXPORT_FUNC(void, RaiseException, (DWORD dwExceptionCode, DWORD dwExceptionFlags, '
        'DWORD nNumberOfArguments, CONST ULONG_PTR* lpArguments)) {\n'
-       '  /* MADEIRA: patched by tools/ci/build-all.sh.  Upstream is UNIMPLEMENTED() here,\n'
-       '   * which turns every 32-bit C++ throw into exit code 0xFE63002C.  Build the\n'
-       '   * record Windows would and raise it on the guest\'s behalf. */\n'
-       '  EXCEPTION_RECORD Rec {};\n'
-       '  Rec.ExceptionCode = dwExceptionCode;\n'
-       '  Rec.ExceptionFlags = dwExceptionFlags;\n'
-       '  Rec.NumberParameters = nNumberOfArguments;\n'
-       '  for (DWORD i = 0; i < nNumberOfArguments && i < EXCEPTION_MAXIMUM_PARAMETERS; ++i)\n'
-       '    Rec.ExceptionInformation[i] = lpArguments ? lpArguments[i] : 0;\n'
-       '  MadeiraWow64RaiseGuestException(&Rec);\n'
-       '  NtTerminateProcess(NtCurrentProcess(), dwExceptionCode);\n'
+       '  MadeiraWow64RaiseDiagnostic(reinterpret_cast<uintptr_t>(__builtin_return_address(0)), reinterpret_cast<uintptr_t>(&RaiseException), dwExceptionCode, dwExceptionFlags, nNumberOfArguments, lpArguments); UNIMPLEMENTED();\n'
        '}')
 if old in s:
     s = s.replace(old, new, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
-    print('[patch] applied: WinAPI RaiseException -> guest-context raise')
-elif 'MadeiraWow64RaiseGuestException' in s:
-    print('[patch] already applied: WinAPI RaiseException')
+    print('[patch] applied: WinAPI RaiseException diagnostic (line 44 preserved)')
+elif 'MadeiraWow64RaiseDiagnostic' in s:
+    print('[patch] already applied: WinAPI RaiseException diagnostic')
 else:
     raise SystemExit('[patch] RaiseException pattern not found')
+
+# Sanity-check the line invariant before the rest of the build proceeds.
+lines = io.open(p, encoding='utf-8').read().splitlines()
+if len(lines) < 44 or 'UNIMPLEMENTED();' not in lines[43]:
+    raise SystemExit('[patch] UNIMPLEMENTED is not on Misc.cpp:44')
+print('[patch] verified: UNIMPLEMENTED remains on Misc.cpp:44')
 PYEOF
 
   if [ "$APP_ONLY" = 1 ]; then
