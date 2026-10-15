@@ -22,11 +22,16 @@ MANIFEST = Path(__file__).with_name("upstream-compat.sha256")
 #   * ntdll.dll   -- the upstream prebuild assumes the native layer has already
 #     allocated native TLS, which this port's alloc_thread_tls does later, so the
 #     32-bit loader is rebuilt with that order fixed (build/wine-wow64/).
+#   * xtajit64.dll -- the upstream prebuild is the upstream v0.1.3 ARM64EC
+#     backend, which is well behind the pinned FEX source (no ml1207 sub-floor
+#     invalidation, no ml1231 ARM64EC host-feature probe).  Rebuilt by
+#     build/fex-arm64ec/ so the 64-bit backend matches the 32-bit one.
 # See HANDOFF; both files are still shipped, so they must exist -- they are just
 # no longer hash-pinned to upstream.
 BUILD_OUTPUTS = frozenset({
     "app/Madeira/aarch64-windows/xtajit.dll",
     "app/Madeira/aarch64-windows/ntdll.dll",
+    "app/Madeira/arm64ec-windows/xtajit64.dll",
 })
 
 # Directories CI builds from source: the 32-bit farm (Wine's i386 modules plus

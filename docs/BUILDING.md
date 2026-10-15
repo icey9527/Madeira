@@ -47,7 +47,7 @@ git-ignored and consumed by the app project.
    of the script is UNVERIFIED.
 2. FEX (submodule, branch ios-port-2607):
    - `FEX/build-ios`: `build/fex-ios/build.sh` (same options as the development CMakeCache) -> `FEX/build-ios/FEXCore/Source/lib{FEXCore,FEXCore_Base,JemallocLibs}.a` and the `External/{cephes,fmt,SoftFloat-3e,xxhash}` archives. UNVERIFIED from clean.
-   - `FEX/build-arm64ec`: `build/fex-arm64ec/build.sh` (configures with `FEX/Data/CMake/toolchain_mingw.cmake` and the recorded options on first run, builds target `arm64ecfex`, copies `Bin/libarm64ecfex.dll` to `app/Madeira/arm64ec-windows/xtajit64.dll`). The build step was verified this session; the first-run configure in the script is reconstructed from CMakeCache and UNVERIFIED.
+   - `FEX/build-arm64ec`: `build/fex-arm64ec/build.sh` (the iOS-host cross build, mirroring `build/fex-wow64/build.sh`: `-DMINGW_TRIPLE=arm64ec-w64-mingw32`, `-DFEX_IOS_HOST_BUILD=ON`, the three `CMAKE_DISABLE_FIND_PACKAGE_*` knobs and a re-rooted `CMAKE_FIND_ROOT_PATH`; builds target `arm64ecfex` and copies `Bin/libarm64ecfex.dll` to `app/Madeira/arm64ec-windows/xtajit64.dll`). The output file used to be the vendored upstream v0.1.3 prebuild; it is now rebuilt by CI in the `native` stage like `aarch64-windows/xtajit.dll`, which is why it is listed in `BUILD_OUTPUTS` in `tools/ci/verify-upstream-compat.py`. UNVERIFIED from clean.
 3. Wine (submodule, branch madeira-lgpl):
    - unix side: `build/ntdll-unix/build.sh`, `build/wineserver/build.sh`,
      `build/win32u-unix/build.sh` -> `app/Madeira/lib{ntdll_unix,wineserver,win32u_unix}.a`. Verified on the development machine.

@@ -148,6 +148,56 @@ jobs:
         id: deps
         run: tools/ci/build-all.sh deps
 
+      # 第二轮（纹理 AIR ICE）的对照物：用 Apple 自己的 Metal 工具链把一段手写
+      # MSL 编成 AIR，再和 airconv 生成的 IR 逐 intrinsic 比对。手里没有 macOS
+      # 时这是唯一能拿到「苹果认为正确的纹理 AIR 形状」的途径。产物写进
+      # ci-logs/，由已有的 upload logs 步骤一并上传。这一步只采数据、不参与
+      # 构建，任何失败都不该拖垮流水线，所以 continue-on-error。
+      - name: Apple 参考 AIR dump（iOS Metal 工具链，数据采集）
+        if: env.APP_ONLY != '1'
+        continue-on-error: true
+        run: |
+          set -x
+          OUT=ci-logs/air-ref
+          mkdir -p "$OUT"
+          xcrun --sdk iphoneos --show-sdk-version || true
+          xcrun --sdk iphoneos metal --version || true
+          cat > "$OUT/ref_texture.metal" <<'MSL'
+          #include <metal_stdlib>
+          using namespace metal;
+
+          struct PSIn {
+            float4 pos [[position]];
+            float2 uv;
+          };
+
+          // Mirrors what airconv lowers a DXBC texture sample to: the AIR
+          // carries air.sample_texture_2d on a texture2d<float>.
+          fragment float4 ps_sample(PSIn in [[stage_in]],
+                                    texture2d<float>  tex [[texture(0)]],
+                                    sampler           smp [[sampler(0)]]) {
+            return tex.sample(smp, in.uv);
+          }
+
+          // And the non-filtered read: air.read_texture_2d.
+          fragment float4 ps_read(PSIn in [[stage_in]],
+                                  texture2d<float> tex [[texture(0)]]) {
+            uint2 coord = uint2(in.uv * float2(tex.get_width(), tex.get_height()));
+            return tex.read(coord);
+          }
+          MSL
+          # -std is version-suffixed per iOS generation; take the first the
+          # installed toolchain accepts so this never depends on the runner image.
+          for STD in ios-metal2.4 ios-metal2.3 ios-metal2.2 ios-metal2.1 ios-metal2.0; do
+            if xcrun -sdk iphoneos metal -std="$STD" -c "$OUT/ref_texture.metal" \
+                 -o "$OUT/ref_texture.air" 2> "$OUT/ref_texture.err"; then
+              echo "compiled with -std=$STD" | tee "$OUT/ref_texture.std"
+              break
+            fi
+            echo "-std=$STD rejected, trying next" >> "$OUT/ref_texture.err"
+          done
+          ls -l "$OUT" || true
+
       - name: Check Homebrew download changes
         id: brew-after
         if: success() && env.APP_ONLY != '1'
@@ -206,6 +256,17 @@ jobs:
           path: FEX/build-wow64
           key: fex-wow64-ios15.6-${{ runner.arch }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/fex-wow64/build.sh', 'tools/ci/build-all.sh') }}
 
+      - name: Restore FEX ARM64EC module build
+        id: fex-arm64ec-cache
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          # 64 位 CPU 后端（libarm64ecfex.dll → arm64ec-windows/xtajit64.dll）同样
+          # 由 build/fex-arm64ec/build.sh 从 pinned FEX 源码构建，key 带上两个
+          # build 脚本的哈希（build-all.sh 里有 FEX 的 CI 侧补丁）。
+          path: FEX/build-arm64ec
+          key: fex-arm64ec-ios15.6-${{ runner.arch }}-${{ steps.fexsha.outputs.sha }}-${{ hashFiles('build/fex-arm64ec/build.sh', 'tools/ci/build-all.sh') }}
+
       - name: native（FEXCore）
         id: native
         run: tools/ci/build-all.sh native
@@ -232,6 +293,13 @@ jobs:
         with:
           path: FEX/build-wow64
           key: ${{ steps.fex-wow64-cache.outputs.cache-primary-key }}
+
+      - name: Save FEX ARM64EC module build
+        if: success() && env.APP_ONLY != '1' && steps.fex-arm64ec-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: FEX/build-arm64ec
+          key: ${{ steps.fex-arm64ec-cache.outputs.cache-primary-key }}
 
       - name: Check compilation cache changes
         id: ccache-after

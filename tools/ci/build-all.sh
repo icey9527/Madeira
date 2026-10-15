@@ -538,6 +538,15 @@ PYEOF
   step "FEX WoW64 模块（build/fex-wow64 → aarch64-windows/xtajit.dll）"
   bash build/fex-wow64/build.sh
 
+  # 64 位 CPU 后端（ARM64EC）。和上面的 32 位模块同理：仓库里 vendored 的
+  # xtajit64.dll 是上游 v0.1.3 的预编译件（日志里的 [build-id] rev=ml908 是
+  # 源码里写死的常量，不是真实修订），而 pinned FEX 源码已经比它多出十几个
+  # 带日志标签的修订，包括 ml1207 的 sub-floor 代码失效、ml1231 的 LRCPC2/AFP
+  # 主机特性、ml1039 的访问违例数据地址诊断。Fate 的 JITPOOL_RIP 正好落在
+  # 这段漂移里，所以这里也改成从 pinned FEX 源码构建。
+  step "FEX ARM64EC 模块（build/fex-arm64ec → arm64ec-windows/xtajit64.dll）"
+  bash build/fex-arm64ec/build.sh
+
   ccache --show-stats
 }
 
