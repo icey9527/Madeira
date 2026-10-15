@@ -178,7 +178,10 @@ for f in "$DEST"/*; do
     while IFS= read -r imp; do
         l="$(echo "$imp" | tr '[:upper:]' '[:lower:]')"
         case "$l" in api-ms-win-*|ext-ms-win-*) continue ;; esac
-        echo "$present" | grep -qx "$l" && continue
+        # here-string, not `echo | grep -q`: grep -q exits on the first match,
+        # the echo then dies of SIGPIPE, and `set -o pipefail` turns that into a
+        # false "missing import" for every DLL that IS present.
+        grep -qx "$l" <<< "$present" && continue
         echo "missing import: $(basename "$f") -> $imp"; missing=$((missing + 1))
     done < <("$OBJDUMP" -p "$f" 2>/dev/null | sed -n 's/^ *DLL Name: //p')
 done
