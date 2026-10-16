@@ -171,7 +171,28 @@ airconv_files = (
     ('airconv/dxso_compile.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
         ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
-    ), ('air64-apple-ios15.0.0',)),
+        # MADEIRA: DXSOCompile is the ONE module exit on the whole airconv
+        # pipeline that never runs runOptimizationPasses -- dxso_compile.cpp
+        # builds the module and hands it straight to MetallibWriter -- so the
+        # attribute strip that this file injects at the end of
+        # runOptimizationPasses can never reach it.  D3D9/FFP is therefore the
+        # only path whose metallib still carries the attributes the device's AIR
+        # reader refuses (code 70 = mustprogress), and of the four places airconv
+        # writes MustProgress by hand, air_operations.cpp:31 is the one that
+        # reaches D3D9 (through pull_vec4_from_addr, the manual vertex fetch).
+        #
+        # Running the same pipeline as dxbc_converter.cpp is what D3D11 has
+        # always had.  Note the experiment this sets up: the optimiser now runs
+        # in BOTH arms (variant 0 and 6), so a difference between them isolates
+        # the strip.
+        ('  llvm::raw_svector_ostream os(compiled->bytes);\n'
+         '  dxmt::metallib::MetallibWriter writer;\n',
+         '  llvm::raw_svector_ostream os(compiled->bytes);\n'
+         '  /* MADEIRA: see prepare-compat.py -- DXSOCompile never ran the passes the\n'
+         '   * D3D11 path runs, and the attribute strip lives at the end of them. */\n'
+         '  dxmt::runOptimizationPasses(*module);\n'
+         '  dxmt::metallib::MetallibWriter writer;\n'),
+    ), ('air64-apple-ios15.0.0', 'dxmt::runOptimizationPasses(*module);')),
     ('airconv/ffp_compile.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
         ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
@@ -338,12 +359,17 @@ inline bool index_from_zero() { return variant() >= 4; }
  * LLVM 12, and every attribute at or below 68 is still safe.
  *
  * airconv's own IR needs exactly one of those newer codes: `mustprogress`,
- * placed by hand in four spots (air_builder.cpp CreateDerivative /
+ * placed by hand in four spots (air_builder.cpp CreateTextureFence /
  * CreateAtomicFence / CreateSetMeshProperties, air_operations.cpp
  * call_unpack_impl -- that last one is the vertex-attribute path).  Chasing
- * the four writers one at a time is fragile, so this drops the whole class at
- * the one place every compilation path passes through: after
- * runOptimizationPasses() and before the module is serialised.
+ * the four writers one at a time is fragile, so this drops the whole class
+ * after runOptimizationPasses() and before the module is serialised.
+ *
+ * NOT "the one place every compilation path passes through" (this said that,
+ * and it was wrong): DXSOCompile in dxso_compile.cpp never called
+ * runOptimizationPasses at all, so every D3D9/FFP module reached the writer
+ * with its attributes intact.  That is why the same file now injects the call
+ * into dxso_compile.cpp as well -- see the note on its variant_files entry.
  *
  * The cost is optimisation quality only: these are promises the optimiser may
  * use, not semantics the hardware needs.
