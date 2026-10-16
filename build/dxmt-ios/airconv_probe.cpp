@@ -4,7 +4,11 @@
  * pull in (windows_base.h) clash with Foundation's BOOL/INT when the same TU
  * also imports Metal; metal_probe.mm talks to this through a C ABI instead.
  *
- * Reproduces exactly what airconv_cli.cpp does, so the Metal compiler can be
+ * Reproduces what the LIBRARY does -- dxbc_converter.cpp's SM50Compile* entries,
+ * link* then runOptimizationPasses then the writer -- not airconv_cli.cpp,
+ * whose order is the reverse and which is why this file was wrong.  (See the
+ * comment at the runOptimizationPasses call.)  The goal is that the Metal
+ * compiler can be
  * asked whether it accepts airconv's output for a shader that reads a texture --
  * the shape that kills the D3D11 path with "Compiler encountered an internal
  * error" while the OS accepts plain Metal shaders of every shape we tried.
@@ -100,6 +104,23 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                                                   (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data)) {
                 text = std::string("convertDXBC: ") + toString(std::move(e));
             } else {
+                /* MADEIRA: the link* calls come BEFORE runOptimizationPasses, in the
+                 * order dxbc_converter.cpp's five SM50Compile* entries use
+                 * (linkMSAD/linkSamplePos/linkTessellation, then
+                 * runOptimizationPasses, then the writer).  This file used to call
+                 * runOptimizationPasses first -- the order airconv_cli.cpp uses --
+                 * and that quietly invalidated every attribute experiment: the
+                 * link* calls splice in prebuilt bitcode that carries
+                 * `mustprogress`, so MADEIRA_AIRCONV_VARIANT=6 stripped a module
+                 * that did not have the attribute yet and Metal received it anyway.
+                 * The 2026-10-16 run is the receipt: the strip reported "0
+                 * function(s) and 0 call(s)" while the VS module dumped right after
+                 * still carried two `mustprogress`.  The probe is supposed to show
+                 * what the library hands Metal, so it has to use the library's
+                 * order. */
+                dxmt::linkMSAD(module);
+                dxmt::linkSamplePos(module);
+                dxmt::linkTessellation(module);
                 dxmt::runOptimizationPasses(module);
                 {
                     std::string verify_text;
@@ -109,9 +130,6 @@ extern "C" int madeira_airconv_probe(const void *dxbc, unsigned len, int mode,
                     }
                     vstream.flush();
                 }
-                dxmt::linkMSAD(module);
-                dxmt::linkSamplePos(module);
-                dxmt::linkTessellation(module);
                 std::string bitcode;
                 raw_string_ostream stream(bitcode);
                 dxmt::metallib::MetallibWriter writer;
