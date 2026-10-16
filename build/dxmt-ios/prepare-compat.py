@@ -192,7 +192,46 @@ airconv_files = (
          '          if (!dxmt::airconv_probe::edit_flag("no-invariant"))\n'
          '            md.string("air.invariant");\n'
          '          md.string("air.arg_type_name")\n'),
-    ), ('edit_flag("no-invariant")',)),
+        ('              if (!dxmt::airconv_probe::edit_flag("no-invariant"))\n',
+         '              if (!dxmt::airconv_probe::edit_flag("no-invariant") &&\n'
+         '                  !dxmt::airconv_probe::edit_flag("apple-vs"))\n'),
+        ('          if (!dxmt::airconv_probe::edit_flag("no-invariant"))\n',
+         '          if (!dxmt::airconv_probe::edit_flag("no-invariant") &&\n'
+         '              !dxmt::airconv_probe::edit_flag("apple-vs"))\n'),
+        ('              md.string("air.arg_type_name")\n'
+         '                  ->string(get_name(position.type))\n'
+         '                  ->string("air.arg_name")\n'
+         '                  ->string("mtl_position");\n',
+         '              md.string("air.arg_type_name")\n'
+         '                  ->string(get_name(position.type))\n'
+         '                  ->string("air.arg_name")\n'
+         '                  ->string((dxmt::airconv_probe::edit_flag("apple-vs") ||\n'
+         '                            dxmt::airconv_probe::edit_flag("position-name"))\n'
+         '                               ? "position" : "mtl_position");\n'),
+        ('          md.string("air.arg_type_name")\n'
+         '            ->string(get_name(position.type))\n'
+         '            ->string("air.arg_name")\n'
+         '            ->string("mtl_position");\n',
+         '          md.string("air.arg_type_name")\n'
+         '            ->string(get_name(position.type))\n'
+         '            ->string("air.arg_name")\n'
+         '            ->string((dxmt::airconv_probe::edit_flag("apple-vs") ||\n'
+         '                      dxmt::airconv_probe::edit_flag("position-name"))\n'
+         '                         ? "position" : "mtl_position");\n'),
+        ('          md.string("air.vertex_output")\n'
+         '            ->string("user(" + vertex_out.user + ")")\n'
+         '            ->string("air.arg_type_name")\n',
+         '          md.string("air.vertex_output");\n'
+         '          if ((dxmt::airconv_probe::edit_flag("apple-vs") ||\n'
+         '               dxmt::airconv_probe::edit_flag("generated-output")) &&\n'
+         '              vertex_out.user == "texcoord0" &&\n'
+         '              get_name(vertex_out.type) == "float4") {\n'
+         '            md.string("generated(9texcoord0Dv4_f)");\n'
+         '          } else {\n'
+         '            md.string("user(" + vertex_out.user + ")");\n'
+         '          }\n'
+         '          md.string("air.arg_type_name")\n'),
+    ), ('edit_flag("no-invariant")', 'edit_flag("apple-vs")')),
     ('airconv/dxso_compile.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
         ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
@@ -375,6 +414,7 @@ inline int variant() {
  * Names, one per line if you like:
  *   textures-31  drop-metadata  index-from-zero
  *   strip-attributes  drop-convergent
+ *   compile-options  position-name  generated-output  apple-vs
  */
 inline bool edit_flag(const char *name) {
   static char buf[8192];
@@ -470,7 +510,22 @@ variant_files = (
          '    Module::ModFlagBehavior::Max, "air.max_textures",\n'
          '    dxmt::airconv_probe::textures_31() ? 31 : 128\n'
          '  );'),
-    ), ('dxmt::airconv_probe::textures_31()',)),
+        ('  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);\n',
+         '  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);\n'
+         '  if (dxmt::airconv_probe::edit_flag("apple-vs") ||\n'
+         '      dxmt::airconv_probe::edit_flag("compile-options")) {\n'
+         '    auto *options = M.getOrInsertNamedMetadata("air.compile_options");\n'
+         '    options->addOperand(MDTuple::get(M.getContext(), {\n'
+         '      MDString::get(M.getContext(), "air.compile.denorms_disable")\n'
+         '    }));\n'
+         '    options->addOperand(MDTuple::get(M.getContext(), {\n'
+         '      MDString::get(M.getContext(), "air.compile.fast_math_enable")\n'
+         '    }));\n'
+         '    options->addOperand(MDTuple::get(M.getContext(), {\n'
+         '      MDString::get(M.getContext(), "air.compile.framebuffer_fetch_enable")\n'
+         '    }));\n'
+         '  }\n'),
+    ), ('dxmt::airconv_probe::textures_31()', 'edit_flag("apple-vs")')),
     ('airconv/dxbc_converter.cpp', (
         ('#include "dxbc_converter.hpp"\n',
          '#include "dxbc_converter.hpp"\n#include "ios15_probe.hpp"\n'),
