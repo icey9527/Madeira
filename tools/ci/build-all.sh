@@ -734,6 +734,93 @@ else:
     s = s.replace(old, new, 1)
     io.open(p, 'w', encoding='utf-8').write(s)
     print('[patch] applied: ExitToX64 FFS floor guard')
+
+# MADEIRA: name the producer of the RIP that the two floor guards now reject.
+#
+# With ntdll's arm64x_check_call and FEX's ExitToX64 both refusing a target at or
+# below 0x100000000, the 13:41 run no longer crashes -- it Livelocks: CompileBlock
+# is entered 4.08e9 times with GuestRIP=0x100000000, 99% of them L1 hits, so the
+# block that exists for that address re-enters the dispatcher immediately. The
+# log says nothing about where the address came from, which is now the only
+# unknown left. Print the guest context the first few times it happens:
+# __builtin_return_address(0) names the host caller, and the guest registers plus
+# the call-return stack say where the guest came from.
+#
+# The same edit stops the flood that turned that livelock into a 48 MB log: 249k
+# of its 264k lines were [CB_SUMMARY], emitted every 16384 CompileBlock calls. The
+# summary is pointless once the hot RIP is the bogus one, so skip it (and keep
+# advancing the window so the check stays cheap).
+p = 'FEX/FEXCore/Source/Interface/Core/Core.cpp'
+s = io.open(p, encoding='utf-8').read()
+if 'floor-rip #' in s:
+    print('[patch] already applied: floor-rip probe + CB_SUMMARY flood guard')
+else:
+    ins = "  /* iOS-Madeira 2026-05-18 low-noise summary. Replaces per-call log (which\n"
+    if ins not in s:
+        raise SystemExit('[patch] CB_SUMMARY block not found -- FEX Core.cpp changed?')
+    probe = "\n".join([
+        "#if defined(FEX_IOS_HOST)",
+        "  /* MADEIRA floor-rip probe: see the patch comment in tools/ci/build-all.sh.",
+        "   * One-shot per arm; a livelock must not be able to flood the log. */",
+        "  if (GuestRIP <= 0x100000000ULL) {",
+        "    static volatile uint32_t floor_rip_count = 0;",
+        "    const uint32_t FR = __sync_add_and_fetch(&floor_rip_count, 1);",
+        "    if (FR <= 4) {",
+        "      LogMan::Msg::EFmt(\"[floor-rip #{}] GuestRIP=0x{:x} State.rip=0x{:x} host_ra=0x{:x} \"",
+        "                        \"callret_sp=0x{:x} Frame=0x{:x}\",",
+        "                        FR, GuestRIP, Frame ? Frame->State.rip : 0,",
+        "                        reinterpret_cast<uintptr_t>(__builtin_return_address(0)),",
+        "                        Frame ? Frame->State.callret_sp : 0,",
+        "                        reinterpret_cast<uintptr_t>(Frame));",
+        "      if (Frame) {",
+        "        LogMan::Msg::EFmt(\"[floor-rip #{}] rax={:#x} rcx={:#x} rdx={:#x} rbx={:#x} \"",
+        "                          \"rsp={:#x} rbp={:#x} rsi={:#x} rdi={:#x}\",",
+        "                          FR, Frame->State.gregs[0], Frame->State.gregs[1],",
+        "                          Frame->State.gregs[2], Frame->State.gregs[3],",
+        "                          Frame->State.gregs[4], Frame->State.gregs[5],",
+        "                          Frame->State.gregs[6], Frame->State.gregs[7]);",
+        "        LogMan::Msg::EFmt(\"[floor-rip #{}] r8={:#x} r9={:#x} r10={:#x} r11={:#x} \"",
+        "                          \"r12={:#x} r13={:#x} r14={:#x} r15={:#x}\",",
+        "                          FR, Frame->State.gregs[8], Frame->State.gregs[9],",
+        "                          Frame->State.gregs[10], Frame->State.gregs[11],",
+        "                          Frame->State.gregs[12], Frame->State.gregs[13],",
+        "                          Frame->State.gregs[14], Frame->State.gregs[15]);",
+        "        const uint64_t FRBase = Frame->State.callret_sp_base;",
+        "        const uint64_t FRSp = Frame->State.callret_sp;",
+        "        const uint64_t FREnd = FRBase + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE;",
+        "        if (FRBase && FRSp >= FRBase && FRSp + 0x10 <= FREnd) {",
+        "          for (int i = 0; i < 6; ++i) {",
+        "            const uint64_t Slot = FRSp + (uint64_t)i * 0x10;",
+        "            if (Slot + 0x10 > FREnd) {",
+        "              break;",
+        "            }",
+        "            LogMan::Msg::EFmt(\"[floor-rip #{}]   callret[+0x{:x}] = {{pc=0x{:x}, ret=0x{:x}}}\"",
+        "                              FR, i * 0x10,",
+        "                              *reinterpret_cast<const uint64_t*>(Slot),",
+        "                              *reinterpret_cast<const uint64_t*>(Slot + 8));",
+        "          }",
+        "        }",
+        "      }",
+        "    }",
+        "  }",
+        "#endif",
+        "",
+    ])
+    s = s.replace(ins, probe + ins, 1)
+
+    cond = "    if ((total - g_cb_last_summary_total) >= 16384) {\n"
+    if cond not in s:
+        raise SystemExit('[patch] CB_SUMMARY condition not found')
+    newcond = ("    /* MADEIRA: a hot RIP at or below the iOS user-space floor means the run is\n"
+               "     * livelocked on a bogus address; [floor-rip] has already named it, and\n"
+               "     * 249k of these lines is what turned one hang into a 48 MB log. Keep the\n"
+               "     * window moving so the check stays cheap, but do not print. */\n"
+               "    if (g_cb_hot_rip <= 0x100000000ULL) {\n"
+               "      g_cb_last_summary_total = total;\n"
+               "    } else if ((total - g_cb_last_summary_total) >= 16384) {\n")
+    s = s.replace(cond, newcond, 1)
+    io.open(p, 'w', encoding='utf-8').write(s)
+    print('[patch] applied: floor-rip probe + CB_SUMMARY flood guard')
 PYEOF
   if [ "$APP_ONLY" = 1 ]; then
     # app 源码只包含 FEXCore 头文件（FEXBridge.mm）；configure 生成
