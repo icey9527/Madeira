@@ -23990,6 +23990,60 @@ NTSTATUS WINAPI NtFreeVirtualMemory( HANDLE process, PVOID *addr_ptr, SIZE_T *si
         pthread_mutex_unlock( &ios_tail_carve_lock );
         if (carve_size)
         {
+            /* iOS-Madeira ml1431: WHO released a live carve, and was the releaser
+             * itself still executing inside it?
+             *
+             * The ml557 guard above samples PC only and skips the caller
+             * (ios_tail_carve_occupied, `threads[i] != self`), so a thread that is
+             * about to RETURN into the carve it just released is invisible to it.
+             * That is what the 2026-10-16 14:52 Fate run looks like:
+             *
+             *   11302 [vfree] base=0x2d6ff8000 size=0x0 type=0x8000 tid=00b0
+             *   11303 [jit-pool] tail FREE rx=0x2d6ff8000 size=0x4000 -> free-list
+             *   11306 [floor-rip #1] GuestRIP=0x100000000 host_ra=0x2d6ff8354
+             *
+             * 0x2d6ff8000 is FEX's per-process Dispatcher buffer (Dispatcher.cpp:56,
+             * freed by ~Dispatcher() at :76) and 0x2d6ff8354 is base+0x354, the
+             * return point of the dispatcher's own `BL CompileBlock`.  Both lines
+             * carry tid=00b0, so the thread that released the buffer was the thread
+             * running it.  [cpu-split] kept sampling PC inside that range afterwards.
+             *
+             * Sample ourselves here -- pc and lr, and whether either is inside the
+             * carve -- so the next run either confirms that shape or rules it out.
+             * Log-only; capped, because frees are rare (33-53 per run) but a storm
+             * like 11302's must not bury the log.  `ra` may name the syscall stub
+             * rather than the C++ destructor three frames up; the pc/lr verdict is
+             * the part that decides whether the guard needs to change. */
+            {
+                static unsigned long self_n;
+                if (++self_n <= 32)
+                {
+                    arm_thread_state64_t sst;
+                    mach_msg_type_number_t ssc = ARM_THREAD_STATE64_COUNT;
+                    mach_port_t selfport = mach_thread_self();
+                    uintptr_t lo = (uintptr_t)base, hi = lo + carve_size;
+                    uintptr_t spc = 0, slr = 0;
+                    int got = 0;
+                    if (selfport &&
+                        thread_get_state( selfport, ARM_THREAD_STATE64,
+                                          (thread_state_t)&sst, &ssc ) == KERN_SUCCESS)
+                    {
+                        spc = (uintptr_t)arm_thread_state64_get_pc( sst );
+                        slr = (uintptr_t)arm_thread_state64_get_lr( sst );
+                        got = 1;
+                    }
+                    if (selfport) mach_port_deallocate( mach_task_self(), selfport );
+                    dprintf(2, "[carve-free-self] #%lu base=%p size=0x%lx thr=%p ra=%p "
+                               "self-pc=%p%s self-lr=%p%s%s rev=ml1431\n",
+                            self_n, (void *)base, (unsigned long)carve_size,
+                            (void *)(uintptr_t)pthread_self(),
+                            __builtin_return_address(0),
+                            (void *)spc, (got && spc >= lo && spc < hi) ? " IN-CARVE" : "",
+                            (void *)slr, (got && slr >= lo && slr < hi) ? " IN-CARVE" : "",
+                            (got && slr >= lo && slr < hi)
+                                ? "  <-- releasing code it will return into" : "");
+                }
+            }
             dprintf(2, "[jit-pool] tail FREE rx=%p size=0x%lx -> free-list rev=ml438\n",
                     (void *)base, (unsigned long)carve_size);
             *addr_ptr = base;
