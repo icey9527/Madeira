@@ -238,14 +238,6 @@ airconv_files = (
          '          }\n'
          '          md.string("air.arg_type_name")\n'),
     ), ('edit_flag("no-invariant")', 'edit_flag("apple-vs")')),
-    # Apple's own iOS 15.6 metallib spells texture types with a space after the
-    # comma (texture2d<float, sample>); airconv emits the compact form.  Every
-    # failing shader in the black-screen run carries a texture and this string,
-    # and the one passing fixture has no texture at all, so the older AGX
-    # compiler is given the spelling it documents.
-    ('airconv/air_signature.hpp', (
-        ('"," + access +', '", " + access +', None),
-    ), ('", " + access +',)),
     ('airconv/dxso_compile.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
         ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
@@ -369,6 +361,23 @@ for relative, pairs, markers in airconv_files:
         raise SystemExit(f'{relative}: a macOS AIR target survives')
     print(f'iOS {sys.argv[3]} airconv stamps: {relative}')
 
+
+# iOS 15.6: Apple's own metallib writes texture argument types with a space
+# after the comma (texture2d<float, sample>); airconv emits the compact form,
+# and this device's AGX compiler refuses every texture shader that carries it.
+# The string lives in air_signature.hpp, which many translation units include,
+# so patch the header in the source tree this build reads (the CI checkout is
+# ephemeral; upstream is never written).
+header_rel = 'airconv/air_signature.hpp'
+header = (source_root / header_rel).read_text(encoding='utf-8')
+compact = '"," + access +'
+spaced = '", " + access +'
+compact_count = header.count(compact)
+if compact_count:
+    (source_root / header_rel).write_text(header.replace(compact, spaced), encoding='utf-8')
+    print(f'iOS {sys.argv[3]} texture type names: {header_rel} ({compact_count} sites)')
+elif header.count(spaced) < 16:
+    raise SystemExit(f'{header_rel}: the texture type spelling is neither compact nor patched')
 
 # ---------------------------------------------------------------------------
 # iOS 15.6: bisect the one thing the device still refuses.
