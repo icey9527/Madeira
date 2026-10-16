@@ -262,6 +262,15 @@ enum MetalSelfTest {
             variant.withCString { _ = setenv("MADEIRA_AIRCONV_VARIANT", $0, 1) }
         }
 
+        // The file-driven experiment channel (build/dxmt-ios/prepare-compat.py):
+        // airconv reads named flags from this file, so an edit costs a text
+        // change and an app restart instead of a CI build.  Published here for
+        // the same reason the variant is: Wine exports madeira.cfg's env.* lines
+        // only when it starts, which is after the in-process probe has run.
+        // Harmless when the file is absent -- airconv simply sees no flags.
+        docs.appendingPathComponent("airconv-edit.txt").path
+            .withCString { _ = setenv("MADEIRA_AIRCONV_EDIT", $0, 1) }
+
         var text = "metal self test \(Date())\n"
         defer {
             try? text.write(to: docs.appendingPathComponent("metal-selftest.txt"), atomically: true, encoding: .utf8)

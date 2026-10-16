@@ -318,7 +318,9 @@ for relative, pairs, markers in airconv_files:
 # variant in madeira.cfg, launch, read the dump and the PSO error.
 probe_header = """#pragma once
 
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 /* See build/dxmt-ios/prepare-compat.py: MADEIRA_AIRCONV_VARIANT changes the AIR
  * shape so the device can bisect what Apple's Metal compiler refuses. */
@@ -331,13 +333,51 @@ inline int variant() {
   return s ? std::atoi(s) : 0;
 }
 
+/* MADEIRA file-driven experiment channel.
+ *
+ * A variant value has to be chosen when this header is compiled, so every edit
+ * costs a CI build.  A named FLAG says the same thing from a file instead:
+ * MADEIRA_AIRCONV_EDIT points at a text file, and a flag is active when its
+ * name appears anywhere in it.  One build then answers any number of edits --
+ * change the file, restart the App.
+ *
+ * The app publishes the path before the in-process probe runs (Wine exports
+ * madeira.cfg's env.* lines too late for that) and madeira.cfg sets the same
+ * variable as env.MADEIRA_AIRCONV_EDIT for a game.  An absent or unreadable
+ * file just means "no flags": every predicate below still answers exactly as
+ * it did before, so this is inert unless asked for.
+ *
+ * Names, one per line if you like:
+ *   textures-31  drop-metadata  index-from-zero
+ *   strip-attributes  drop-convergent
+ */
+inline bool edit_flag(const char *name) {
+  static char buf[8192];
+  static int state = 0;            /* 0 unread, 1 read, 2 unreadable */
+  if (state == 0) {
+    state = 2;
+    const char *path = std::getenv("MADEIRA_AIRCONV_EDIT");
+    if (path && *path) {
+      if (std::FILE *f = std::fopen(path, "rb")) {
+        size_t n = std::fread(buf, 1, sizeof(buf) - 1, f);
+        std::fclose(f);
+        buf[n] = 0;
+        state = 1;
+      }
+    }
+  }
+  if (state != 1 || !name || !*name) return false;
+  return std::strstr(buf, name) != nullptr;
+}
+
 /* 1 / 3: declare air.max_textures as 31 instead of 128. */
-inline bool textures_31() { return variant() == 1 || variant() >= 3; }
+inline bool textures_31() { return variant() == 1 || variant() >= 3 || edit_flag("textures-31"); }
 
 /* 2 / 3: leave the per-texture/sampler metadata member out of the argument
  * buffer and feed the shader the constants it would have read: array length 1
  * (clamp a 2D index to 0) and minLOD clamp 0.  TextureMetadata(1, 0.0f). */
-inline bool drop_metadata() { return variant() == 2 || variant() == 3 || variant() >= 5; }
+inline bool drop_metadata() { return variant() == 2 || variant() == 3 || variant() >= 5 ||
+                                   edit_flag("drop-metadata"); }
 
 /* 4 / 5: number textures and UAVs from 0 instead of from 128 (SRV) / 512 (UAV).
  *
@@ -348,7 +388,7 @@ inline bool drop_metadata() { return variant() == 2 || variant() == 3 || variant
  * compile on this device -- numbers its texture [[id(0)]], not [[id(128)]].
  * Only the location index changes; the argument buffer's own member numbering
  * (StructurePtrOffset) is a separate thing and stays put. */
-inline bool index_from_zero() { return variant() >= 4; }
+inline bool index_from_zero() { return variant() >= 4 || edit_flag("index-from-zero"); }
 
 /* 6: strip every function attribute whose bitcode code is above 68.
  *
@@ -381,8 +421,8 @@ inline bool index_from_zero() { return variant() >= 4; }
  * all, yet its pipeline is refused.  43 is in LLVM 11's table, so this is not
  * about the reader -- if 43 turns out to matter it is about what Metal does
  * with the promise, which is a different question. */
-inline bool strip_attributes() { return variant() == 6 || variant() >= 7; }
-inline bool drop_convergent() { return variant() >= 7; }
+inline bool strip_attributes() { return variant() == 6 || variant() >= 7 || edit_flag("strip-attributes"); }
+inline bool drop_convergent() { return variant() >= 7 || edit_flag("drop-convergent"); }
 
 } // namespace dxmt::airconv_probe
 """
