@@ -989,6 +989,10 @@ final class LibraryModel: ObservableObject {
         launchPresent = madeira_get_present_count(); launchStarted = Date(); launchSlow = false; launchLogs = entry.liveLogs
         launchSurface = winios_surface_present_count()
         MetalBackedView.presentCountAtLaunch = launchPresent; laidOutAfterFirstPresent = false
+        // A disappearing SwiftUI HUD does not always deliver onDisappear on
+        // iOS 15 when the session body replaces the library.  Never let a stale
+        // hit region from the previous session survive into this one.
+        menuButtonRect = .zero; performanceRect = .zero
         launching = true; overlayFields = entry.overlayFields ?? ["FPS", "Frame time", "RAM", "Battery"]
         displayMode = entry.displayMode
         activeEntry = entry; current = entry.id; menu = false; performance = entry.performance; liveLogs = entry.liveLogs
@@ -1149,6 +1153,7 @@ final class LibraryModel: ObservableObject {
         controls.controls = savedControls; controls.visible = savedVisible; controls.sizeScale = savedSize
         if ControlPresetsModel.enabled { controls.layoutID = savedLayout }
         current = nil; activeEntry = nil; menu = false; sessionMessage = ""
+        menuButtonRect = .zero; performanceRect = .zero
         displayMode = .fit
         LogStore.shared.setDisplayActive(true)
         launching = false; launchLogs = false; LibraryKeyboard.hide()
@@ -2938,8 +2943,14 @@ struct LibraryDetail: View {
         }
         leaving = true
         let profile = entry
-        // Give the pressed state a display turn before saving and handing off.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        // iOS 15's NavigationView keeps a presented sheet alive when the view
+        // that presented it is replaced by the session body.  That stale detail
+        // page can sit over/behind the game surface and receive later taps (its
+        // cover picker and text fields are the "file / text box" seen in game).
+        // Close it explicitly, then hand off after the dismissal animation.
+        LogStore.shared.log("[library-detail] dismissing before launch id=\(profile.id)")
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             model.save(profile); play(profile)
         }
     }

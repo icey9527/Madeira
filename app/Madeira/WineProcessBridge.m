@@ -592,6 +592,31 @@ static void madeira_link_syswow64_wbem(NSFileManager *fm, NSString *prefix, NSSt
     madeira_link_wbem(fm, prefix, @"syswow64", [bundle stringByAppendingPathComponent:@"i386-windows"]);
 }
 
+/* C:\windows\system32 and syswow64: PE-side ntdll loads code-page tables
+ * through the Windows path, and a 32-bit process's system32 is redirected to
+ * syswow64.  The app bundle's nls directory is the single source for both
+ * architectures, so link every NLS table into both farms. */
+static void madeira_link_nls(NSFileManager *fm, NSString *prefix, NSString *bundle)
+{
+    NSString *source = [bundle stringByAppendingPathComponent:@"nls"];
+    NSArray *dirs = @[@"drive_c/windows/system32", @"drive_c/windows/syswow64"];
+
+    for (NSString *relative in dirs) {
+        NSString *dir = [prefix stringByAppendingPathComponent:relative];
+        [fm createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+        int linked = 0;
+        for (NSString *f in [fm contentsOfDirectoryAtPath:source error:nil]) {
+            if (![[f pathExtension] isEqualToString:@"nls"]) continue;
+            NSString *src = [source stringByAppendingPathComponent:f];
+            if (![fm fileExistsAtPath:src]) continue;
+            NSString *dst = [dir stringByAppendingPathComponent:f];
+            [fm removeItemAtPath:dst error:nil];
+            if ([fm createSymbolicLinkAtPath:dst withDestinationPath:src error:nil]) linked++;
+        }
+        dprintf(STDERR_FILENO, "[WineProc] NLS %s: %d links -> nls\n", relative.UTF8String, linked);
+    }
+}
+
 /* ml1275: C:\windows\mono\mono-2.0 -> the bundle's Wine Mono, when the build
  * carries one (the "Bundle Wine Mono" build phase); otherwise the copy Madeira
  * downloaded from WineHQ (WineMono.swift, Library/Application Support/WineMono/
@@ -1389,6 +1414,7 @@ static void *wine_process_thread(void *arg) {
                 madeira_link_syswow64_wbem(fm, prefix, bundlePath);
                 madeira_seed_winsxs_x86(fm, prefix, bundlePath);
             }
+            madeira_link_nls(fm, prefix, bundlePath);
             madeira_link_wine_mono(fm, prefix, bundlePath);
 
             /* ml719: REPAIR THE SHELL FOLDERS. They ship as symlinks to the BUILD
