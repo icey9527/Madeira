@@ -185,6 +185,27 @@ jobs:
             uint2 coord = uint2(in.uv * float2(tex.get_width(), tex.get_height()));
             return tex.read(coord);
           }
+
+          // A VERTEX function too, and deliberately the same shape airconv emits
+          // for its own VS fixture: four builtin uints in, position plus one
+          // float4 out.  Without this we have no Apple vertex AIR to diff against
+          // -- and the on-device probe says an airconv VERTEX module is what
+          // breaks a pipeline on its own (airconv VS + Apple MSL PS still gets
+          // AGXMetal13_3 Code=3), so it is the half that has no reference.
+          struct VSOut {
+            float4 position  [[position]];
+            float4 texcoord0;
+          };
+
+          vertex VSOut vs_simple(uint vid      [[vertex_id]],
+                                 uint base_vid [[base_vertex]],
+                                 uint iid      [[instance_id]],
+                                 uint base_iid [[base_instance]]) {
+            VSOut o;
+            o.position  = float4(1.0, 1.0, 0.0, 1.0);
+            o.texcoord0 = float4((float)vid, (float)base_vid, (float)iid, (float)base_iid);
+            return o;
+          }
           MSL
           # -std is version-suffixed per iOS generation; take the first the
           # installed toolchain accepts so this never depends on the runner image.
