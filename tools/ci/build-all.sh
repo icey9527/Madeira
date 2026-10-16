@@ -794,7 +794,7 @@ else:
         "            if (Slot + 0x10 > FREnd) {",
         "              break;",
         "            }",
-        "            LogMan::Msg::EFmt(\"[floor-rip #{}]   callret[+0x{:x}] = {{pc=0x{:x}, ret=0x{:x}}}\"",
+        "            LogMan::Msg::EFmt(\"[floor-rip #{}]   callret[+0x{:x}] = {{pc=0x{:x}, ret=0x{:x}}}\",",
         "                              FR, i * 0x10,",
         "                              *reinterpret_cast<const uint64_t*>(Slot),",
         "                              *reinterpret_cast<const uint64_t*>(Slot + 8));",
