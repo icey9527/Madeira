@@ -26,6 +26,36 @@ for relative in sources:
         if compatible.count(fma_old) != 1:
             raise SystemExit('DXMT air.fma pattern changed: air_builder.cpp')
         compatible = compatible.replace(fma_old, fma_new)
+        constants_include_old = '#include "llvm/IR/DerivedTypes.h"\n'
+        constants_include_new = '#include "llvm/IR/Constants.h"\n#include "llvm/IR/DerivedTypes.h"\n'
+        if compatible.count(constants_include_old) != 1:
+            raise SystemExit('DXMT air_builder.cpp include anchor changed')
+        compatible = compatible.replace(constants_include_old, constants_include_new)
+        fastop_old = ('  auto OperandType = Operand->getType();\n'
+                      '\n'
+                      '  std::string FnName = "air.";\n'
+                      '  if (FastVariant)\n'
+                      '    FnName += "fast_";\n'
+                      '  FnName += FnNames[Op];\n')
+        fastop_new = ('  auto OperandType = Operand->getType();\n'
+                      '\n'
+                      '  std::string FnName = "air.";\n'
+                      '  /* MADEIRA: this device rejects air.fast_saturate and\n'
+                      '   * air.fast_rint; Apple\'s own iOS 15 metallib uses\n'
+                      '   * air.fast_clamp(x, 0, 1) and air.rint. */\n'
+                      '  if (Op == saturate) {\n'
+                      '    auto ClampFn = getModule()->getOrInsertFunction(\n'
+                      '        "air.fast_clamp" + getTypeOverloadSuffix(OperandType),\n'
+                      '        llvm::FunctionType::get(OperandType, {OperandType, OperandType, OperandType}, false), Attrs);\n'
+                      '    return builder.CreateCall(ClampFn, {Operand, llvm::ConstantFP::get(OperandType, 0.0),\n'
+                      '                                        llvm::ConstantFP::get(OperandType, 1.0)});\n'
+                      '  }\n'
+                      '  if (FastVariant && Op != rint)\n'
+                      '    FnName += "fast_";\n'
+                      '  FnName += FnNames[Op];\n')
+        if compatible.count(fastop_old) != 1:
+            raise SystemExit('DXMT air_builder.cpp FPUnOp pattern changed')
+        compatible = compatible.replace(fastop_old, fastop_new)
     output.write_text(compatible, encoding='utf-8')
     print(f'iOS {sys.argv[3]} format compatibility: {relative}')
 
