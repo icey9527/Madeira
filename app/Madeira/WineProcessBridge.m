@@ -182,6 +182,38 @@ static int ios_reg_unmangle(const char *path)
     return ok ? (int)hits : 0;
 }
 
+/* Replace literal .reg fragments in place.  Used for the prefix-wide
+ * codepage migration below; no-op once the prefix already has the values. */
+static int ios_reg_replace_pairs(NSString *path, NSArray<NSArray<NSString *> *> *pairs)
+{
+    NSError *error = nil;
+    NSMutableString *text = [NSMutableString stringWithContentsOfFile:path
+                                                             encoding:NSUTF8StringEncoding
+                                                                error:&error];
+    if (!text) return 0;
+
+    NSUInteger hits = 0;
+    for (NSArray<NSString *> *pair in pairs) {
+        NSString *from = pair[0], *to = pair[1];
+        NSRange search = NSMakeRange(0, text.length);
+        while (search.length) {
+            NSRange found = [text rangeOfString:from options:0 range:search];
+            if (found.location == NSNotFound) break;
+            [text replaceCharactersInRange:found withString:to];
+            hits++;
+            NSUInteger next = found.location + to.length;
+            if (next >= text.length) break;
+            search = NSMakeRange(next, text.length - next);
+        }
+    }
+    if (!hits) return 0;
+    if (![text writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:&error]) {
+        LOG("codepage: %{public}s write FAILED", path.fileSystemRepresentation);
+        return 0;
+    }
+    return (int)hits;
+}
+
 /* Move src into dst, merging. Existing destinations are never overwritten. */
 static void ios_merge_move(const char *src, const char *dst, int depth)
 {
@@ -412,6 +444,56 @@ static void madeira_ensure_locallow(NSString *prefix)
  * ActivatableClassId (Thumper aborts on RoGetActivationFactory for
  * Windows.Gaming.Input.Gamepad), and no Fonts keys (the #61/#70 dwrite fix).
  */
+/* A fresh Wine prefix records the host's default ANSI/OEM code page.  The
+ * iOS host normally starts at western 1252, so GBK game bytes are decoded as
+ * western/Cyrillic glyphs.  Migrate both new and existing prefixes before the
+ * wineserver reads the registry. */
+static void madeira_force_gbk_codepage(NSString *prefix)
+{
+    NSArray<NSArray<NSString *> *> *pairs = @[
+        @[@"\"ACP\"=\"1252\"",          @"\"ACP\"=\"936\""],
+        @[@"\"OEMCP\"=\"000\"",         @"\"OEMCP\"=\"936\""],
+        @[@"\"MACCP\"=\"10000\"",       @"\"MACCP\"=\"10008\""],
+        @[@"\"Default\"=\"0409\"",      @"\"Default\"=\"0804\""],
+        @[@"@=\"00000409\"",            @"@=\"00000804\""],
+        @[@"\"Locale\"=\"00000c00\"",   @"\"Locale\"=\"00000804\""],
+        @[@"\"LocaleName\"=\"zh-Hans-HK\"", @"\"LocaleName\"=\"zh-CN\""],
+    ];
+    for (NSString *reg in @[@"system.reg", @"user.reg"]) {
+        NSString *path = [prefix stringByAppendingPathComponent:reg];
+        int hits = ios_reg_replace_pairs(path, pairs);
+        if (hits) LOG("codepage: %{public}s -> GBK (936), %d replacement(s)", reg.UTF8String, hits);
+    }
+}
+
+/* The app bundle carries a full Noto Sans CJK SC face whose internal family
+ * name is Microsoft YaHei / 微软雅黑.  Wine enumerates C:\windows\Fonts at
+ * startup, so this becomes the GDI font the game's CreateFontA request finds. */
+static void madeira_install_cjk_font(NSString *prefix)
+{
+    NSString *src = [[NSBundle mainBundle] pathForResource:@"MicrosoftYaHei"
+                                                    ofType:@"otf"
+                                               inDirectory:@"fonts"];
+    if (!src) {
+        LOG("cjk font missing from bundle");
+        return;
+    }
+    NSString *dir = [prefix stringByAppendingPathComponent:@"drive_c/windows/Fonts"];
+    NSString *dst = [dir stringByAppendingPathComponent:@"msyh.otf"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSDictionary *sattr = [fm attributesOfItemAtPath:src error:nil];
+    NSDictionary *dattr = [fm attributesOfItemAtPath:dst error:nil];
+    if (sattr && dattr && [sattr[NSFileSize] isEqual:dattr[NSFileSize]]) return;
+    [fm removeItemAtPath:dst error:nil];
+    NSError *error = nil;
+    if ([fm copyItemAtPath:src toPath:dst error:&error]) {
+        LOG("cjk font installed: %{public}s", dst.UTF8String);
+    } else {
+        LOG("cjk font install FAILED: %{public}s", dst.UTF8String);
+    }
+}
+
 void madeira_seed_prefix_if_needed(const char *prefix_path) {
     @autoreleasepool {
         if (!prefix_path) return;
@@ -449,6 +531,8 @@ void madeira_seed_prefix_if_needed(const char *prefix_path) {
         /* ml581: see madeira_undo_appdata_skeleton() above. */
         madeira_undo_appdata_skeleton( prefix );
         madeira_ensure_locallow( prefix );
+        madeira_force_gbk_codepage( prefix );
+        madeira_install_cjk_font( prefix );
     }
 }
 
