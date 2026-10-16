@@ -213,6 +213,17 @@ jobs:
             if xcrun -sdk iphoneos metal -std="$STD" -c "$OUT/ref_texture.metal" \
                  -o "$OUT/ref_texture.air" 2> "$OUT/ref_texture.err"; then
               echo "compiled with -std=$STD" | tee "$OUT/ref_texture.std"
+              # And the same module as TEXT.  llvm-nm lists the entry points of the
+              # .air but nothing else, and metadata is where airconv's module
+              # differs from Apple's (its texture argument is written with
+              # air.location_index 128, while the hand-written MSL argument buffer
+              # that this device accepts numbers it 0).  Apple's metal frontend is
+              # clang, so -emit-llvm -S prints exactly that module.
+              xcrun -sdk iphoneos metal -std="$STD" -emit-llvm -S \
+                    "$OUT/ref_texture.metal" -o "$OUT/ref_texture.ll" \
+                    2> "$OUT/ref_texture.ll.err" || \
+                echo "-emit-llvm -S failed; see ref_texture.ll.err" >&2
+              ls -l "$OUT" || true
               break
             fi
             echo "-std=$STD rejected, trying next" >> "$OUT/ref_texture.err"
