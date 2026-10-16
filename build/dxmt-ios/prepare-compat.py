@@ -661,7 +661,10 @@ variant_files = (
     ('airconv/airconv_context.cpp', (
         ('#include "airconv_context.hpp"\n',
          '#include "airconv_context.hpp"\n#include "ios15_probe.hpp"\n'),
-        # Variant 6/7: see strip_attributes() in ios15_probe.hpp.  This is the one
+        # iOS 15.6 ALWAYS strips the attributes above code 68.  The device's AIR
+        # reader is older than LLVM 12 and rejects mustprogress (code 70); every
+        # module that carries a declaration with it is refused with the AGX ICE.
+        # This is the one
         # place every compilation path goes through -- dxbc_converter.cpp's five
         # SM50Compile/SM50CompileGSPassthrough entries all call
         # runOptimizationPasses() and then hand the module to the metallib writer
@@ -679,7 +682,7 @@ variant_files = (
          '   * module straight to the metallib writer, while linkShader() (which runs\n'
          '   * earlier, for MSAD/sample-pos/tessellation) only parses and links\n'
          '   * prebuilt bitcode and adds no attributes of its own. */\n'
-         '  if (dxmt::airconv_probe::strip_attributes()) {\n'
+         '  {\n'
          '    const bool drop_convergent = dxmt::airconv_probe::drop_convergent();\n'
          '    /* 68 is `noundef`, the last attribute code LLVM 11 knew.  This\n'
          '     * device\'s AIR reader is older than LLVM 12, so every code above\n'
@@ -719,7 +722,7 @@ variant_files = (
          '                 << (drop_convergent ? ", including convergent" : "") << "\\n";\n'
          '  }\n'
          '}\n'),
-    ), ('strip_attributes()',)),
+    ), ('attribute masks removed from',)),
 )
 
 for relative, pairs, markers in variant_files:
