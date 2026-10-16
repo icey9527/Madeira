@@ -168,6 +168,31 @@ airconv_files = (
         ('createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(1), createUnsignedInteger(0)',
          'createString("Metal"), createUnsignedInteger(2), createUnsignedInteger(4), createUnsignedInteger(0)'),
     ), ('air64-apple-ios15.0.0',)),
+    ('airconv/air_signature.cpp', (
+        ('#include "air_signature.hpp"\n',
+         '#include "air_signature.hpp"\n#include "ios15_probe.hpp"\n'),
+        # MADEIRA: Apple writes its own vertex position output as
+        #   !{!"air.position", !"air.arg_type_name", !"float4", !"air.arg_name", !"position"}
+        # and airconv inserts !"air.invariant" between the first two, in both
+        # OutputPosition handlers below.  This device refuses an airconv VERTEX
+        # module on its own -- airconv VS + Apple MSL PS is still
+        # AGXMetal13_3 Code=3 -- so the flag "no-invariant" omits it and the
+        # probe can say whether that is what the compiler objects to.
+        ('              md.string("air.position")\n'
+         '                  ->string("air.invariant")\n'
+         '                  ->string("air.arg_type_name")\n',
+         '              md.string("air.position");\n'
+         '              if (!dxmt::airconv_probe::edit_flag("no-invariant"))\n'
+         '                  md.string("air.invariant");\n'
+         '              md.string("air.arg_type_name")\n'),
+        ('          md.string("air.position")\n'
+         '            ->string("air.invariant")\n'
+         '            ->string("air.arg_type_name")\n',
+         '          md.string("air.position");\n'
+         '          if (!dxmt::airconv_probe::edit_flag("no-invariant"))\n'
+         '            md.string("air.invariant");\n'
+         '          md.string("air.arg_type_name")\n'),
+    ), ('edit_flag("no-invariant")',)),
     ('airconv/dxso_compile.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
         ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
