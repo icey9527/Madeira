@@ -20,6 +20,12 @@ for relative in sources:
     output.parent.mkdir(parents=True, exist_ok=True)
     compatible = source.replace('#include <format>', '#include <fmt/format.h>')
     compatible = compatible.replace('std::format(', 'fmt::format(')
+    if relative == 'airconv/nt/air_builder.cpp':
+        fma_old = '  auto &Context = getContext();\n  auto Attrs = AttributeList::get(\n      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},\n                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},\n                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}\n  );\n\n  SmallVector<Value *> Ops;\n  SmallVector<Type *> Tys;\n\n  Tys.push_back(X->getType());\n  Ops.push_back(X);\n  Tys.push_back(Y->getType());\n  Ops.push_back(Y);\n  Tys.push_back(Z->getType());\n  Ops.push_back(Z);\n\n  std::string FnName = "air.fma";\n  FnName += getTypeOverloadSuffix(X->getType());\n\n  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(X->getType(), Tys, false), Attrs);\n\n  return builder.CreateCall(Fn, Ops);\n'
+        fma_new = "  /* MADEIRA: iOS 15.6's AGX compiler ICEs on air.fma.*; the no-fma probe\n   * fixture, which removes one DXBC mad, passes every pipeline.  DXBC mad\n   * does not require fused rounding, so lower it to the separate mul/add\n   * the older compiler accepts.  Keep the type checks above. */\n  return builder.CreateFAdd(builder.CreateFMul(X, Y), Z);\n"
+        if compatible.count(fma_old) != 1:
+            raise SystemExit('DXMT air.fma pattern changed: air_builder.cpp')
+        compatible = compatible.replace(fma_old, fma_new)
     output.write_text(compatible, encoding='utf-8')
     print(f'iOS {sys.argv[3]} format compatibility: {relative}')
 
