@@ -11,6 +11,22 @@
 # `make -C dlls/winegstreamer`, which would also try the GStreamer-based .so.
 set -eu
 R="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# MADEIRA: this DLL comes from a source that tools/ci/build-all.sh PATCHES, so a
+# missing patch is not a build error -- it just produces the stock ntdll, which
+# then ships and silently reverts the fix it was meant to carry.  That happened:
+# the arm64x_check_call floor guard was absent from the 4589017 nightly because
+# this script never ran, and CI stayed green.  Assert the patched text is there
+# BEFORE building, and touch the file so make cannot decide a cached object is
+# already up to date.
+patched="$R/wine/dlls/ntdll/signal_arm64ec.c"
+if ! grep -q "madeira_ec_floor_log" "$patched"; then
+    echo "build-ntdll.sh: signal_arm64ec.c does not carry the arm64x_check_call" >&2
+    echo "floor guard -- tools/ci/build-all.sh's patch did not run. Refusing to" >&2
+    echo "produce a stock ntdll that would silently ship in its place." >&2
+    exit 1
+fi
+touch "$patched"
 TC="$R/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin"
 export PATH="$TC:$PATH"
 B="$R/wine/build-arm64ec"

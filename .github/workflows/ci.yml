@@ -348,6 +348,35 @@ jobs:
             app/Madeira/libwin32u_unix.a
           key: ${{ steps.wine-cache.outputs.cache-primary-key }}
 
+      # 64 位 PE ntdll（arm64ec-windows/ntdll.dll）。
+      #
+      # 它由 build/wine-pe/build-ntdll.sh 从 wine 子模块构建，而那个构建的前提是
+      # tools/ci/build-all.sh 先给 wine/dlls/ntdll/signal_arm64ec.c 打过补丁。
+      # 所以 key 必须带上 build-all.sh 的哈希 —— 否则"补丁改了、缓存命中、构建被
+      # 跳过"会静默发出一份未经补丁的旧 ntdll（4589017 的 nightly 就是这样丢掉了
+      # arm64x_check_call 的地板护栏，而 CI 全绿）。构建步骤不被 cache 命中跳过，
+      # 与上面 WoW64 loader 的三步写法一致；脚本自己会断言补丁在场。
+      - name: Restore the arm64ec PE ntdll
+        id: wine-pe-ntdll-cache
+        if: env.APP_ONLY != '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: app/Madeira/arm64ec-windows/ntdll.dll
+          key: wine-pe-ntdll-v1-${{ runner.arch }}-${{ steps.deps.outputs.xcode }}-${{ steps.native.outputs.wine-sha }}-${{ hashFiles('build/wine-pe/build-ntdll.sh', 'tools/ci/build-all.sh') }}
+
+      - name: Build the arm64ec PE ntdll (arm64x_check_call floor guard)
+        if: env.APP_ONLY != '1'
+        run: |
+          export PATH="$(brew --prefix)/opt/bison/bin:$(brew --prefix)/opt/flex/bin:$(brew --prefix)/bin:$PATH"
+          bash build/wine-pe/build-ntdll.sh > >(tee ci-logs/wine-pe-ntdll.log) 2>&1
+
+      - name: Save the arm64ec PE ntdll
+        if: success() && env.APP_ONLY != '1' && steps.wine-pe-ntdll-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: app/Madeira/arm64ec-windows/ntdll.dll
+          key: ${{ steps.wine-pe-ntdll-cache.outputs.cache-primary-key }}
+
       # 32 位（WoW64）宿主 ntdll 必须和我们的原生层配套：上游那份成品假设
       # "原生层已经先分配 native TLS"，而 iOS 版 alloc_thread_tls 发生得更晚，
       # 于是 FEX 的 CPU 后端一初始化就读到 NULL（libwow64fex+0x1b2a88）。

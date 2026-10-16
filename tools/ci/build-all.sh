@@ -810,13 +810,13 @@ stage_wine() {
   fi
   wine_host_command make -C wine/build-arm64ec -j "$NPROC" include/all
 
-  # 64 位 PE 边的 ntdll。和 aarch64-windows/ntdll.dll、xtajit.dll、xtajit64.dll 同一个
-  # 道理：仓库里 vendored 且被哈希钉死的那份已经遮不住 iOS 15.6。这次要补的是
-  # arm64x_check_call 的下界 —— ml975 只挡了上界（x11 >= 2^39），而摆在眼前的坏目标
-  # 是 0x100000000（= iOS 用户空间地板），它小于 2^39 所以大摇大摆通过检查，然后被
-  # 当指针解引用（ntdll 池副本 RVA 0x5623c，调用者 libarm64ecfex.dll+0x1412c）。
-  step "wine PE ntdll（arm64ec-windows/ntdll.dll，含 arm64x_check_call 地板护栏）"
-  bash build/wine-pe/build-ntdll.sh
+  # 64 位 PE 边的 ntdll **不在这里**构建。它由 build/wine-pe/build-ntdll.sh 产出，
+  # 而那个脚本的前提是 tools/ci/build-all.sh 已给 wine/dlls/ntdll/signal_arm64ec.c
+  # 打过补丁；本阶段是 cache 命中就整体跳过的（见 ci.yml 的 wine-cache），把构建
+  # 放在这里会让"补丁变了但本阶段没跑"变成一次静默的旧文件发布 —— 4589017 那次
+  # 就是这样：arm64x_check_call 的地板护栏没进包，CI 却全绿。它现在有自己的
+  # restore / build / save 三步（照抄 aarch64-windows/ntdll.dll 那个 WoW64 loader
+  # 的写法），key 里带上 build-all.sh 的哈希，且构建步骤不被 cache 命中跳过。
   hdrs_x="$(find wine/build-arm64ec/include -name '*.h' 2>/dev/null | wc -l | tr -d ' ')"
   echo "  build-arm64ec 生成头文件数: $hdrs_x"
   for header in dwrite dwrite_3 objidlbase objidl; do
