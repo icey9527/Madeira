@@ -238,6 +238,14 @@ airconv_files = (
          '          }\n'
          '          md.string("air.arg_type_name")\n'),
     ), ('edit_flag("no-invariant")', 'edit_flag("apple-vs")')),
+    # Apple's own iOS 15.6 metallib spells texture types with a space after the
+    # comma (texture2d<float, sample>); airconv emits the compact form.  Every
+    # failing shader in the black-screen run carries a texture and this string,
+    # and the one passing fixture has no texture at all, so the older AGX
+    # compiler is given the spelling it documents.
+    ('airconv/air_signature.hpp', (
+        ('"," + access +', '", " + access +', None),
+    ), ('", " + access +',)),
     ('airconv/dxso_compile.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
         ('{u32_md(2), u32_md(7), u32_md(0)}', '{u32_md(2), u32_md(4), u32_md(0)}'),
