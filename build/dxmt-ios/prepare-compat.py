@@ -1,4 +1,5 @@
 import pathlib
+import shutil
 import sys
 
 source_root = pathlib.Path(sys.argv[1])
@@ -800,6 +801,21 @@ for relative, pairs, markers in variant_files:
 # then draws without ever calling UnlockRect.  The native frontend uploads the
 # mirror only on Unlock, so the sampled texture stays blank.  Push a still-
 # locked level's bytes on SetTexture without releasing the application's lock.
+# The frontend sources include their headers with quoted paths.  Copy the whole
+# d3d9 tree, not just the files this script edits: otherwise a pristine header
+# reachable from the original source directory wins the compiler's quoted-
+# include search and the modified class definitions never enter every TU.
+d3d9_source = source_root / 'd3d9'
+d3d9_output = output_root / 'd3d9'
+for source in d3d9_source.rglob('*'):
+    if not source.is_file():
+        continue
+    destination = output_root / source.relative_to(source_root)
+    if destination.exists():
+        continue
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+
 d3d9_files = (
     ('d3d9/d3d9_common_texture.hpp', (
         ('  virtual void\n  sweepManagedUpload() {}\n',

@@ -141,12 +141,17 @@ compile_cxx() {
 
 # MADEIRA: the native D3D9 frontend and its substrate (section 8.10 step 1).
 compile_madeira_cxx() {
-    local src=$1 name=$2 extra="${3:-}"
+    local src=$1 name=$2 extra="${3:-}" origin=""
+    local relative="${src#"$DXMT_SRC/"}"
+    if [ -f "$BUILD_DIR/compat-src/$relative" ]; then
+        extra="$extra -I$(dirname "$src")"
+        src="$BUILD_DIR/compat-src/$relative"; origin=" [compat]"
+    fi
     printf "  %-40s " "$name"
     if xcrun -sdk iphoneos clang++ $COMMON_FLAGS $MADEIRA_CXX_FLAGS $MADEIRA_WARNINGS \
         $MADEIRA_INCLUDES $INCLUDES_DIRECTX $INCLUDES_SHADERS $MADEIRA_DEFS $extra \
         -c "$src" -o "$OBJ_DIR/$name.o" 2>"$OBJ_DIR/$name.err"; then
-        echo "OK"; SUCCEEDED=$((SUCCEEDED+1))
+        echo "OK$origin"; SUCCEEDED=$((SUCCEEDED+1))
     else
         echo "FAILED"; FAILED=$((FAILED+1)); FAILED_FILES="$FAILED_FILES $name"
     fi
@@ -350,6 +355,9 @@ for cpp in dxmt_format.cpp dxmt_names.cpp dxmt_command_queue.cpp dxmt_command.cp
 done
 
 echo "=== MADEIRA: dxmt_madeira_native -- d3d9 frontend ==="
+# prepare-compat.py writes a complete d3d9 shadow tree.  Every frontend object
+# must compile from it: the compatibility patch adds a virtual method, and a
+# mixed pristine/compat set of headers would give TUs different class layouts.
 for cpp in d3d9.cpp d3d9_buffer.cpp d3d9_census.cpp d3d9_clear_quad.cpp \
            d3d9_cube_texture.cpp d3d9_device.cpp d3d9_format.cpp d3d9_fvf.cpp \
            d3d9_interface.cpp d3d9_mem.cpp d3d9_query.cpp d3d9_shader.cpp \
@@ -416,6 +424,19 @@ xcrun -sdk iphoneos libtool -static -o "$COMBINED" "$OUT_LIB" "$LLVM_BUILD/lib/"
 APP_COPY="$REPO_ROOT/app/Madeira/libdxmt_combined.a"
 cp "$COMBINED" "$APP_COPY"
 echo "Staged: $APP_COPY ($(wc -c < "$APP_COPY" | tr -d ' ') bytes)"
+
+# The native D3D9 frontend is compiled by compile_madeira_cxx, not compile_cxx.
+# It once read the pristine dxmt/src tree, so prepare-compat.py's locked-texture
+# flush existed only as text and never reached the IPA.  Receipt the three
+# objects that must contain its diagnostic string; a green build without these
+# is a false pass, not a working fix.
+for d3d9_obj in d3d9_device d3d9_surface d3d9_texture; do
+    if ! LC_ALL=C grep -aq 'd9-locked-flush' "$OBJ_DIR/$d3d9_obj.o"; then
+        echo "::error::$d3d9_obj.o has no locked-texture flush -- compile_madeira_cxx did not consume compat-src/d3d9/$d3d9_obj.cpp"
+        exit 1
+    fi
+done
+echo "D3D9 locked-texture flush: present in d3d9_device/surface/texture objects"
 
 # The MTLCopyAllDevices guard prepare-compat.py writes into winemetal_unix.c is
 # what keeps D3D11 device creation off address 0 on iOS 15.6, and it has been
