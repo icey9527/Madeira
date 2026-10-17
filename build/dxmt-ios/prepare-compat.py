@@ -881,9 +881,67 @@ d3d9_files = (
          '}\n\nHRESULT STDMETHODCALLTYPE\nMTLD3D9Texture::AddDirtyRect(const RECT *pDirtyRect) {\n'),
     ), ('flushLockedLevels',)),
     ('d3d9/d3d9_device.cpp', (
+        ('#include "d3d9_device.hpp"\n',
+         '#include <cstdint>\n#include "d3d9_device.hpp"\n'),
+        ('enum { kLeaf2D = 0, kLeafCube = 1, kLeafVolume = 2 };\nstd::atomic<const void *> g_textureLeafVtable[3] = {};\n',
+         'enum { kLeaf2D = 0, kLeafCube = 1, kLeafVolume = 2 };\nstd::atomic<const void *> g_textureLeafVtable[3] = {};\nstd::atomic<const void *> g_textureLeafObject[3] = {};\n'),
+        ('void\ncaptureTextureLeafVtable(IDirect3DBaseTexture9 *leaf, unsigned index) {\n'
+         '  g_textureLeafVtable[index].store(*reinterpret_cast<const void *const *>(leaf), std::memory_order_relaxed);\n'
+         '}\n',
+         'void\ncaptureTextureLeafVtable(IDirect3DBaseTexture9 *leaf, unsigned index) {\n'
+         '  const void *vtable = *reinterpret_cast<const void *const *>(leaf);\n'
+         '  g_textureLeafObject[index].store(leaf, std::memory_order_relaxed);\n'
+         '  g_textureLeafVtable[index].store(vtable, std::memory_order_relaxed);\n'
+         '  static unsigned capture_logged = 0;\n'
+         '  if (capture_logged++ < 8)\n'
+         '    Logger::warn(str::format(\n'
+         '        "[d9-locked-flush] capture idx=", index, " ptr=", (uintptr_t)leaf,\n'
+         '        " vtable=", (uintptr_t)vtable));\n'
+         '}\n'),
+        ('  if (!iface)\n'
+         '    return nullptr;\n'
+         '  const void *vtable = *reinterpret_cast<const void *const *>(iface);\n',
+         '  if (!iface)\n'
+         '    return nullptr;\n'
+         '  // The native handle table already validated the object identity.  Match\n'
+         '  // the canonical pointer as a fallback for the 32-bit bridge, where the\n'
+         '  // interface pointer can reach this side with a different vtable value.\n'
+         '  if (iface == g_textureLeafObject[kLeaf2D].load(std::memory_order_relaxed))\n'
+         '    return static_cast<MTLD3D9Texture *>(static_cast<IDirect3DTexture9 *>(iface));\n'
+         '  if (iface == g_textureLeafObject[kLeafCube].load(std::memory_order_relaxed))\n'
+         '    return static_cast<MTLD3D9CubeTexture *>(static_cast<IDirect3DCubeTexture9 *>(iface));\n'
+         '  if (iface == g_textureLeafObject[kLeafVolume].load(std::memory_order_relaxed))\n'
+         '    return static_cast<MTLD3D9VolumeTexture *>(static_cast<IDirect3DVolumeTexture9 *>(iface));\n'
+         '  const void *vtable = *reinterpret_cast<const void *const *>(iface);\n'),
+        ('  // Identify the texture without calling through its app-visible vtable (which an\n'
+         '  // overlay may have wrapped, or an app deliberately corrupted): an unrecognised\n'
+         '  // non-null pointer is treated as "no texture", matching wined3d.\n'
+         '  MTLD3D9CommonTexture *common = commonTextureFromBound(pTexture);\n',
+         '  // Identify the texture without calling through its app-visible vtable (which an\n'
+         '  // overlay may have wrapped, or an app deliberately corrupted): an unrecognised\n'
+         '  // non-null pointer is treated as "no texture", matching wined3d.\n'
+         '  static unsigned settex_entry_logged = 0;\n'
+         '  if (settex_entry_logged++ < 8) {\n'
+         '    const void *bound_vtable =\n'
+         '        pTexture ? *reinterpret_cast<const void *const *>(pTexture) : nullptr;\n'
+         '    Logger::warn(str::format(\n'
+         '        "[d9-locked-flush] entry slot=", slot, " ptr=", (uintptr_t)pTexture,\n'
+         '        " vtable=", (uintptr_t)bound_vtable,\n'
+         '        " cap2d=", (uintptr_t)g_textureLeafVtable[kLeaf2D].load(std::memory_order_relaxed),\n'
+         '        " obj2d=", (uintptr_t)g_textureLeafObject[kLeaf2D].load(std::memory_order_relaxed)));\n'
+         '  }\n'
+         '  MTLD3D9CommonTexture *common = commonTextureFromBound(pTexture);\n'),
         ('  }\n  // Recording arm AFTER the validation gates above (DXVK validates\n',
-         '  }\n  if (common) {\n    static unsigned settex_logged = 0;\n    if (settex_logged++ < 8)\n      Logger::warn(str::format("[d9-locked-flush] SetTexture type=", common->commonTextureType()));\n    common->flushLockedLevels();\n  }\n  // Recording arm AFTER the validation gates above (DXVK validates\n'),
-    ), ('flushLockedLevels',)),
+         '  }\n  if (common) {\n'
+         '    static unsigned settex_logged = 0;\n'
+         '    if (settex_logged++ < 8)\n'
+         '      Logger::warn(str::format(\n'
+         '          "[d9-locked-flush] matched ptr=", (uintptr_t)pTexture, " owner=", (uintptr_t)common->deviceRaw(),\n'
+         '          " this=", (uintptr_t)this, " type=", common->commonTextureType()));\n'
+         '    common->flushLockedLevels();\n'
+         '  }\n'
+         '  // Recording arm AFTER the validation gates above (DXVK validates\n'),
+    ), ('flushLockedLevels', 'd9-locked-flush')),
 )
 for relative, pairs, markers in d3d9_files:
     out = output_root / relative
