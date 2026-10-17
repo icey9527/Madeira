@@ -794,3 +794,80 @@ for relative, pairs, markers in variant_files:
         if marker not in written:
             raise SystemExit(f'{relative}: {marker!r} missing from the written file')
     print(f'iOS {sys.argv[3]} airconv variant switch: {relative}')
+
+# ---------------------------------------------------------------------------
+# iOS 15 native D3D9: SDL2/Ponscripter locks a streaming texture, writes it,
+# then draws without ever calling UnlockRect.  The native frontend uploads the
+# mirror only on Unlock, so the sampled texture stays blank.  Push a still-
+# locked level's bytes on SetTexture without releasing the application's lock.
+d3d9_files = (
+    ('d3d9/d3d9_common_texture.hpp', (
+        ('  virtual void\n  sweepManagedUpload() {}\n',
+         '  virtual void\n  sweepManagedUpload() {}\n'
+         '  // A texture still locked at draw time: SetTexture pushes its current\n'
+         '  // bytes because the app may never call UnlockRect (SDL2/Ponscripter).\n'
+         '  virtual void\n  flushLockedLevels() {}\n'),
+    ), ('flushLockedLevels',)),
+    ('d3d9/d3d9_surface.hpp', (
+        ('  bool\n  lockedNoDirtyUpdate() const {\n    return m_locked_no_dirty_update;\n  }\n',
+         '  bool\n  lockedNoDirtyUpdate() const {\n    return m_locked_no_dirty_update;\n  }\n'
+         '  // Upload the still-mapped rect without clearing the lock state.\n'
+         '  void\n  flushLockedUpload();\n'),
+    ), ('flushLockedUpload',)),
+    ('d3d9/d3d9_surface.cpp', (
+        ('HRESULT STDMETHODCALLTYPE\nMTLD3D9Surface::GetDC(HDC *phdc) {\n',
+         'void\nMTLD3D9Surface::flushLockedUpload() {\n'
+         '  if (!m_locked || m_locked_readonly || m_buffer != nullptr || m_cpu_ptr == nullptr || m_texture == nullptr)\n'
+         '    return;\n'
+         '  if (!(m_desc.Pool == D3DPOOL_MANAGED || m_desc.Pool == D3DPOOL_DEFAULT) || IsNullFormat(m_desc.Format) ||\n'
+         '      m_locked_w == 0 || m_locked_h == 0)\n'
+         '    return;\n'
+         '  uint32_t x = m_locked_x, y = m_locked_y, w = m_locked_w, h = m_locked_h;\n'
+         '  if (Is3DcFormat(m_desc.Format)) {\n'
+         '    x = 0; y = 0; w = m_desc.Width; h = m_desc.Height;\n'
+         '  }\n'
+         '  const bool compressed = IsCompressedFormat(m_desc.Format);\n'
+         '  const uint32_t row_pitch = D3DFormatRowPitch(m_desc.Format, m_desc.Width);\n'
+         '  const uint32_t src_offset = image_lock_block_offset(x, y, m_pitch, row_pitch, m_desc.Width, compressed);\n'
+         '  WMTOrigin origin{}; origin.x = x; origin.y = y; origin.z = 0;\n'
+         '  WMTSize size{}; size.width = w; size.height = h; size.depth = 1;\n'
+         '  const void *src = static_cast<const uint8_t *>(m_cpu_ptr) + src_offset;\n'
+         '  m_device->stageTextureUpload(\n'
+         '      m_texture, m_dxmtTexture, m_mip_level, m_array_slice, origin, size, src, m_pitch, compressed,\n'
+         '      /*src_slice_pitch=*/0, D3DFormatRowPitch(m_desc.Format, w)\n'
+         '  );\n'
+         '}\n\nHRESULT STDMETHODCALLTYPE\nMTLD3D9Surface::GetDC(HDC *phdc) {\n'),
+    ), ('flushLockedUpload',)),
+    ('d3d9/d3d9_texture.hpp', (
+        ('  HRESULT STDMETHODCALLTYPE AddDirtyRect(const RECT *pDirtyRect) override;\n',
+         '  HRESULT STDMETHODCALLTYPE AddDirtyRect(const RECT *pDirtyRect) override;\n'
+         '  void flushLockedLevels() override;\n'),
+    ), ('flushLockedLevels',)),
+    ('d3d9/d3d9_texture.cpp', (
+        ('HRESULT STDMETHODCALLTYPE\nMTLD3D9Texture::AddDirtyRect(const RECT *pDirtyRect) {\n',
+         'void\nMTLD3D9Texture::flushLockedLevels() {\n'
+         '  for (auto &level : m_levels)\n'
+         '    if (level.ptr() && level.ptr()->locked())\n'
+         '      level.ptr()->flushLockedUpload();\n'
+         '}\n\nHRESULT STDMETHODCALLTYPE\nMTLD3D9Texture::AddDirtyRect(const RECT *pDirtyRect) {\n'),
+    ), ('flushLockedLevels',)),
+    ('d3d9/d3d9_device.cpp', (
+        ('  }\n  // Recording arm AFTER the validation gates above (DXVK validates\n',
+         '  }\n  if (common)\n    common->flushLockedLevels();\n  // Recording arm AFTER the validation gates above (DXVK validates\n'),
+    ), ('flushLockedLevels',)),
+)
+for relative, pairs, markers in d3d9_files:
+    out = output_root / relative
+    src = (out if out.exists() else source_root / relative).read_text(encoding='utf-8')
+    for original, replacement in pairs:
+        if src.count(original) != 1:
+            raise SystemExit(f'{relative}: expected 1 match, found {src.count(original)}: {original[:60]!r}')
+        src = src.replace(original, replacement)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(src, encoding='utf-8')
+    written = out.read_text(encoding='utf-8')
+    for marker in markers:
+        if marker not in written:
+            raise SystemExit(f'{relative}: {marker!r} missing from the written file')
+    print(f'iOS {sys.argv[3]} d3d9 locked-texture flush: {relative}')
+
