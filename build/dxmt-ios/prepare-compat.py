@@ -822,6 +822,12 @@ d3d9_files = (
          '  if (!(m_desc.Pool == D3DPOOL_MANAGED || m_desc.Pool == D3DPOOL_DEFAULT) || IsNullFormat(m_desc.Format) ||\n'
          '      m_locked_w == 0 || m_locked_h == 0)\n'
          '    return;\n'
+         '  static unsigned flush_logged = 0;\n'
+         '  if (flush_logged++ < 8)\n'
+         '    Logger::warn(str::format(\n'
+         '        "[d9-locked-flush] level=", m_mip_level, " locked=", m_locked_w, "x", m_locked_h, " pool=", m_desc.Pool,\n'
+         '        " fmt=", m_desc.Format, " buffer=", m_buffer != nullptr ? 1 : 0,\n'
+         '        " cpu=", m_cpu_ptr != nullptr ? 1 : 0));\n'
          '  uint32_t x = m_locked_x, y = m_locked_y, w = m_locked_w, h = m_locked_h;\n'
          '  if (Is3DcFormat(m_desc.Format)) {\n'
          '    x = 0; y = 0; w = m_desc.Width; h = m_desc.Height;\n'
@@ -846,6 +852,13 @@ d3d9_files = (
     ('d3d9/d3d9_texture.cpp', (
         ('HRESULT STDMETHODCALLTYPE\nMTLD3D9Texture::AddDirtyRect(const RECT *pDirtyRect) {\n',
          'void\nMTLD3D9Texture::flushLockedLevels() {\n'
+         '  static unsigned texture_logged = 0;\n'
+         '  if (texture_logged++ < 8) {\n'
+         '    unsigned locked = 0;\n'
+         '    for (auto &level : m_levels)\n'
+         '      if (level.ptr() && level.ptr()->locked()) ++locked;\n'
+         '    Logger::warn(str::format("[d9-locked-flush] texture levels=", m_levels.size(), " locked=", locked));\n'
+         '  }\n'
          '  for (auto &level : m_levels)\n'
          '    if (level.ptr() && level.ptr()->locked())\n'
          '      level.ptr()->flushLockedUpload();\n'
@@ -853,7 +866,7 @@ d3d9_files = (
     ), ('flushLockedLevels',)),
     ('d3d9/d3d9_device.cpp', (
         ('  }\n  // Recording arm AFTER the validation gates above (DXVK validates\n',
-         '  }\n  if (common)\n    common->flushLockedLevels();\n  // Recording arm AFTER the validation gates above (DXVK validates\n'),
+         '  }\n  if (common) {\n    static unsigned settex_logged = 0;\n    if (settex_logged++ < 8)\n      Logger::warn(str::format("[d9-locked-flush] SetTexture type=", common->commonTextureType()));\n    common->flushLockedLevels();\n  }\n  // Recording arm AFTER the validation gates above (DXVK validates\n'),
     ), ('flushLockedLevels',)),
 )
 for relative, pairs, markers in d3d9_files:
