@@ -209,6 +209,54 @@ print(f'iOS {sys.argv[3]} gpuResourceID guarded in {relative} ({total} sites)')
 airconv_files = (
     ('airconv/airconv_context.cpp', (
         ('"air64-apple-macosx14.0.0"', '"air64-apple-ios15.0.0"'),
+        ('#include "llvm/IR/Constants.h"\n',
+         '#include "llvm/ADT/SmallVector.h"\n'
+         '#include "llvm/IR/Constants.h"\n'
+         '#include "llvm/IR/Instructions.h"\n'
+         '#include "llvm/IR/Intrinsics.h"\n'),
+        ('static std::atomic_flag llvm_overwrite = false;\n'
+         '\n'
+         'void\n'
+         'runOptimizationPasses(llvm::Module &M) {',
+         'static void lowerUnsupportedIntrinsics(llvm::Module &M) {\n'
+         '  for (llvm::Function &F : M) {\n'
+         '    llvm::SmallVector<llvm::CallInst *, 4> calls;\n'
+         '    for (llvm::BasicBlock &BB : F)\n'
+         '      for (llvm::Instruction &I : BB)\n'
+         '        if (auto *CI = llvm::dyn_cast<llvm::CallInst>(&I))\n'
+         '          if (llvm::Function *Callee = CI->getCalledFunction()) {\n'
+         '            auto id = Callee->getIntrinsicID();\n'
+         '            if (id == llvm::Intrinsic::umin || id == llvm::Intrinsic::usub_sat)\n'
+         '              calls.push_back(CI);\n'
+         '          }\n'
+         '    for (llvm::CallInst *CI : calls) {\n'
+         '      llvm::IRBuilder<> B(CI);\n'
+         '      auto *L = CI->getArgOperand(0);\n'
+         '      auto *R = CI->getArgOperand(1);\n'
+         '      llvm::Value *V;\n'
+         '      if (CI->getCalledFunction()->getIntrinsicID() == llvm::Intrinsic::umin)\n'
+         '        V = B.CreateSelect(B.CreateICmpULT(L, R), L, R);\n'
+         '      else\n'
+         '        V = B.CreateSelect(B.CreateICmpUGT(L, R), B.CreateSub(L, R),\n'
+         '                           llvm::Constant::getNullValue(L->getType()));\n'
+         '      CI->replaceAllUsesWith(V);\n'
+         '      CI->eraseFromParent();\n'
+         '    }\n'
+         '  }\n'
+         '  for (auto it = M.begin(); it != M.end();) {\n'
+         '    llvm::Function *F = &*it++;\n'
+         '    if (F->isDeclaration() && F->use_empty()) {\n'
+         '      auto id = F->getIntrinsicID();\n'
+         '      if (id == llvm::Intrinsic::umin || id == llvm::Intrinsic::usub_sat)\n'
+         '        F->eraseFromParent();\n'
+         '    }\n'
+         '  }\n'
+         '}\n'
+         '\n'
+         'static std::atomic_flag llvm_overwrite = false;\n'
+         '\n'
+         'void\n'
+         'runOptimizationPasses(llvm::Module &M) {'),
     ), ('air64-apple-ios15.0.0',)),
     ('airconv/dxbc_converter.cpp', (
         ('"air64-apple-macosx15.0.0"', '"air64-apple-ios15.0.0"'),
@@ -676,6 +724,10 @@ variant_files = (
          '  // Optimize the IR!\n'
          '  MPM.run(M, MAM);\n'
          '\n'
+         '  /* D3D9 vertex-fetch indexing reaches these through InstCombine; the\n'
+         '   * iOS 15 AIR reader does not know either.  Lower after every pass. */\n'
+         '  lowerUnsupportedIntrinsics(M);\n'
+         '\n'
          '  /* The attributes the device\'s AIR reader refuses (see ios15_probe.hpp).\n'
          '   * This is the last pass over the IR: every entry point in\n'
          '   * dxbc_converter.cpp calls runOptimizationPasses() and then hands the\n'
@@ -715,7 +767,7 @@ variant_files = (
          '                 << " function(s) and " << call_hits << " call(s)" << "\\n";\n'
          '  }\n'
          '}\n'),
-    ), ('attribute masks removed from',)),
+    ), ('attribute masks removed from', 'lowerUnsupportedIntrinsics')),
 )
 
 for relative, pairs, markers in variant_files:
